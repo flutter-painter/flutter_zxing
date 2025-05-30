@@ -22,6 +22,8 @@
 #include "MultiFormatWriter.h"
 #include "BitMatrix.h"
 #include "Version.h"
+#include "barcode_enhancer.h"
+#include "barcode_format.h"
 
 #include <algorithm>
 #include <chrono>
@@ -211,27 +213,41 @@ int elapsed_ms(const steady_clock::time_point& start)
     return chrono::duration_cast<chrono::milliseconds>(duration).count();
 }
 
+// Helper to check if format is 1D
+bool is1DFormat(int format) {
+    return (format & Format::LINEAR_CODES) != 0;
+}
+
 //
 // FFI impls
 //
 
 CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
 {
-    // Absolutely ensure we don't unwind across the FFI boundary.
-    try
-    {
+    try {
         auto start = steady_clock::now();
-
         ImageView image = createCroppedImageView(params);
         ReaderOptions hints = createReaderOptions(params);
-        Result result = ReadBarcode(image, hints);
 
-        int duration = elapsed_ms(start);
+        Result result;
+        int duration;
+
+        // Always try enhanced image first
+        platform_log("Attempting barcode detection with enhancement\n");
+        ImageView enhancedImage = BarcodeEnhancer::enhance1DBarcode(image);
+        result = ReadBarcode(enhancedImage, hints);
+        
+        // If no barcode found, fall back to original image
+        if (!result.isValid()) {
+            platform_log("Enhanced detection failed, falling back to original image\n");
+            result = ReadBarcode(image, hints);
+        }
+
+        duration = elapsed_ms(start);
         platform_log("Read Barcode in: %d ms\n", duration);
         return codeResultFromResult(result, duration, params.width, params.height, image);
     }
-    catch (const exception& e)
-    {
+    catch (const exception& e) {
         platform_log("Exception while reading barcode: %s\n", e.what());
         CodeResult result{};
         result.isValid = false;
@@ -242,41 +258,47 @@ CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
 
 CodeResults _readBarcodes(const DecodeBarcodeParams& params) noexcept
 {
-    // Absolutely ensure we don't unwind across the FFI boundary.
-    try
-    {
+    try {
         auto start = steady_clock::now();
 
         ImageView image = createCroppedImageView(params);
         ReaderOptions hints = createReaderOptions(params);
-        Results results = ReadBarcodes(image, hints);
+        
+        Results results;
+        
+        // Always try enhanced image first
+        platform_log("Attempting barcode detection with enhancement\n");
+        ImageView enhancedImage = BarcodeEnhancer::enhance1DBarcode(image);
+        results = ReadBarcodes(enhancedImage, hints);
+        
+        // If no barcodes found, fall back to original image
+        if (results.empty()) {
+            platform_log("Enhanced detection failed, falling back to original image\n");
+            results = ReadBarcodes(image, hints);
+        }
 
         int duration = elapsed_ms(start);
         platform_log("Read Barcodes in: %d ms\n", duration);
 
-        if (results.empty())
-        {
-            return CodeResults {0, nullptr, duration};
+        if (results.empty()) {
+            return CodeResults{0, nullptr, duration};
         }
 
         auto* codes = dart_malloc<CodeResult>(results.size());
         int i = 0;
-        for (const auto& result : results)
-        {
+        for (const auto& result : results) {
             // if result is invalid skip it
-            if (!result.isValid())
-            {
+            if (!result.isValid()) {
                 continue;
             }
             codes[i] = codeResultFromResult(result, duration, params.width, params.height, image);
             i++;
         }
-        return CodeResults {i, codes, duration};
+        return CodeResults{i, codes, duration};
     }
-    catch (const exception& e)
-    {
+    catch (const exception& e) {
         platform_log("Exception while reading barcodes: %s\n", e.what());
-        return CodeResults {0, nullptr, 0};
+        return CodeResults{0, nullptr, 0};
     }
 }
 

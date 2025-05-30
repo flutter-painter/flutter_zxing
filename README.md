@@ -1,5 +1,20 @@
 # Flutter ZXing
 
+
+cd .. && git submodule update --init --recursive
+cd third_party\CImg && curl -LO https://raw.githubusercontent.com/GreycLab/CImg/master/CImg.h
+
+https://cimg.eu/
+
+We want a bare minimum version of barcode flutterZxing Scanning that 
+
+0. take the image I
+1. enhance image with a pipeline specific to 1D Barcode I1
+2. use ZXING to extract barcode info from I1
+3. if no barcode detected/extracted fallback on Zxing extraction I0 
+
+
+
 Flutter ZXing is a high-performance Flutter plugin for scanning and generating QR codes and barcodes. Built on the powerful [ZXing C++ library](https://github.com/zxing-cpp/zxing-cpp), it provides fast and reliable barcode processing capabilities for Flutter applications. Whether you need to scan barcodes from the camera or generate custom QR codes, Flutter ZXing makes it seamless and efficient.
 
 ---
@@ -18,6 +33,9 @@ Flutter ZXing is a high-performance Flutter plugin for scanning and generating Q
   - [Getting Started](#getting-started)
     - [Cloning the flutter\_zxing project](#cloning-the-flutter_zxing-project)
     - [Installing dependencies](#installing-dependencies)
+    - [Use with dependency\_overrides](#use-with-dependency_overrides)
+      - [Recommended Approach: Using a Git Submodule](#recommended-approach-using-a-git-submodule)
+      - [Why Not Use a Direct Git Reference?](#why-not-use-a-direct-git-reference)
   - [Usage](#usage)
     - [To read barcode](#to-read-barcode)
     - [To create barcode](#to-create-barcode)

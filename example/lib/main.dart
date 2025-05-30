@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
 
+import 'test_page.dart';
 import 'widgets/debug_info_widget.dart';
 import 'widgets/scan_result_widget.dart';
 import 'widgets/unsupported_platform_widget.dart';
@@ -55,13 +56,14 @@ class _DemoPageState extends State<DemoPage> {
     final isCameraSupported = defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.android;
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const TabBar(
             tabs: [
               Tab(text: 'Scan Code'),
               Tab(text: 'Create Code'),
+              Tab(text: 'Test Images'),
             ],
           ),
         ),
@@ -152,6 +154,7 @@ class _DemoPageState extends State<DemoPage> {
                   ],
                 ),
               ),
+            const TestPage(),
           ],
         ),
       ),
@@ -199,17 +202,10 @@ class _DemoPageState extends State<DemoPage> {
     }
   }
 
-  _onMultiScanModeChanged(bool isMultiScan) {
+  _onMultiScanModeChanged(bool isMulti) {
     setState(() {
-      this.isMultiScan = isMultiScan;
+      isMultiScan = isMulti;
     });
-  }
-
-  _showMessage(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
   }
 
   _onReset() {
@@ -217,5 +213,11 @@ class _DemoPageState extends State<DemoPage> {
       successScans = 0;
       failedScans = 0;
     });
+  }
+
+  void _showMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 }
