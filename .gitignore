@@ -31,3 +31,4 @@ build/
 # iOS and MacOS src folders
 ios/Classes/src/
 macos/Classes/src/
+/barcode_images

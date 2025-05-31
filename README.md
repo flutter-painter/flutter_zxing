@@ -1,6 +1,9 @@
 # Flutter ZXing
 
 
+cd build ; cmake .. ; cmake --build . ; ./barcode_tests
+
+
 cd .. && git submodule update --init --recursive
 cd third_party\CImg && curl -LO https://raw.githubusercontent.com/GreycLab/CImg/master/CImg.h
 

@@ -1,9 +1,12 @@
 #pragma once
 
-#include <CImg.h>
 #include "ReadBarcode.h"
+#include <vector>
+#include <cmath>
 
-using namespace cimg_library;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace ZXing {
 
@@ -13,45 +16,27 @@ public:
     // Returns enhanced image in ZXing ImageView format
     static ImageView enhance1DBarcode(const ImageView& input);
 
-    // Made public for testing
-    static void anisotropicSmoothing(CImg<uint8_t>& image);
-    static void verticalEdgeEnhancement(CImg<uint8_t>& image);
-    static void normalizeBarWidths(CImg<uint8_t>& image);
-    static void enforceBarWidthRatios(CImg<uint8_t>& image, int baseWidth);
-    static void normalizeQuietZones(CImg<uint8_t>& image, int barWidth);
-    static void morphologicalClean(CImg<uint8_t>& image);
-    static void adaptiveThreshold(CImg<uint8_t>& image);
-    static int estimateBarWidth(const CImg<uint8_t>& image);
-
 private:
     // Core enhancement steps
-    static CImg<uint8_t> convertToGrayscale(const ImageView& input);
-    static void directionalEnhance(CImg<uint8_t>& image);
-    static void enhanceCode128(CImg<uint8_t>& image);
+    static std::vector<uint8_t> convertToGrayscale(const ImageView& input);
+    static void gaussianBlur(std::vector<uint8_t>& image, int width, int height, float sigma = 1.0f);
+    static void adaptiveThreshold(std::vector<uint8_t>& image, int width, int height, int windowSize = 15, float C = 5.0f);
+    static void erode(std::vector<uint8_t>& image, int width, int height, int kernelSize = 3);
+    static void dilate(std::vector<uint8_t>& image, int width, int height, int kernelSize = 3);
     
-    // Analysis helpers
-    static float detectOrientation(const CImg<uint8_t>& image);
-    static void rotateToHorizontal(CImg<uint8_t>& image, float angle);
-    static std::vector<int> analyzeBarWidths(const CImg<uint8_t>& image);
+    // New contrast enhancement functions
+    static void enhanceContrast(std::vector<uint8_t>& image);
+    static void normalizeImage(std::vector<uint8_t>& image);
+    static void stretchHistogram(std::vector<uint8_t>& image, float lowPercentile = 1.0f, float highPercentile = 99.0f);
     
-    // Advanced image processing using CImg features
-    static void sharpenVerticalEdges(CImg<uint8_t>& image);
-    static void enhanceLocalContrast(CImg<uint8_t>& image, int blockSize = 16);
-    
-    // Utility functions
-    static void applyDirectionalSobel(CImg<uint8_t>& image, bool vertical);
-    static ImageView toImageView(const CImg<uint8_t>& image);
+    // Helper functions
+    static ImageView toImageView(const std::vector<uint8_t>& image, int width, int height);
+    static std::vector<uint8_t> createKernel(int size);
     
     // Constants for enhancement
-    static constexpr int MIN_BAR_WIDTH = 2;  // Minimum expected bar width in pixels
-    static constexpr int MAX_BAR_WIDTH = 20; // Maximum expected bar width in pixels
-    static constexpr float MIN_CONTRAST = 30.0f; // Minimum contrast between bars
-    static constexpr int DIRECTION_BLOCK_SIZE = 32; // Block size for direction analysis
-    
-    // Constants for Code 128 enhancement
-    static constexpr int QUIET_ZONE_MULT = 10;    // Quiet zone should be 10x narrow bar width
-    static constexpr float BAR_WIDTH_TOLERANCE = 0.2f; // 20% tolerance for width ratios
-    static constexpr int VERTICAL_SMOOTH_RADIUS = 5;   // Vertical smoothing radius
-    static constexpr float EDGE_SHARPEN_AMOUNT = 1.5f; // Edge sharpening factor
+    static constexpr int MIN_BAR_WIDTH = 2;
+    static constexpr int MAX_BAR_WIDTH = 20;
+    static constexpr float MIN_CONTRAST = 30.0f;
 };
-} 
+
+} // namespace ZXing 

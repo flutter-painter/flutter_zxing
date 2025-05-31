@@ -2,14 +2,9 @@ cmake_minimum_required(VERSION 3.16)
 
 project(flutter_zxing LANGUAGES C CXX)
 
-# Add CImg header-only library
-include(FetchContent)
-FetchContent_Declare(
-    cimg
-    GIT_REPOSITORY https://github.com/dtschump/CImg.git
-    GIT_TAG master  # You may want to pin to a specific version
-)
-FetchContent_MakeAvailable(cimg)
+# Set C++17 as required
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(
     flutter_zxing
@@ -25,15 +20,15 @@ add_subdirectory(zxing/core EXCLUDE_FROM_ALL)
 
 target_link_libraries(flutter_zxing ZXing)
 
-# CImg configuration
-target_include_directories(flutter_zxing PRIVATE ${cimg_SOURCE_DIR})
-target_compile_definitions(flutter_zxing PRIVATE cimg_display=0 cimg_use_jpeg=0 cimg_use_png=0)
-
 # use log-lib only for android platform
 if (ANDROID)
     find_library(log-lib log)
     target_link_libraries(flutter_zxing ${log-lib})
 endif (ANDROID)
+
+# Enable testing and add test directory
+enable_testing()
+add_subdirectory(tests)
 
 # Command to update zxing submodule
 # cd src/zxing
