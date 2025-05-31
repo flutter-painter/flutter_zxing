@@ -4,6 +4,7 @@
 #include <memory>
 #include <numeric>
 #include <cstring>
+#include <stb_image_write.h>
 
 namespace ZXing {
 
@@ -180,26 +181,41 @@ ImageView BarcodeEnhancer::toImageView(const std::vector<uint8_t>& image, int wi
     return ImageView(data, width, height, ImageFormat::Lum);
 }
 
+void saveDebugImage(const std::vector<uint8_t>& image, int width, int height, const char* filename) {
+    stbi_write_png(filename, width, height, 1, image.data(), width);
+}
+
 ImageView BarcodeEnhancer::enhance1DBarcode(const ImageView& input) {
     // Convert to grayscale if needed
     std::vector<uint8_t> image = convertToGrayscale(input);
     int width = input.width();
     int height = input.height();
 
-    // Enhance contrast before other operations
-    stretchHistogram(image, 1.0f, 99.0f);
-    enhanceContrast(image);
+    // Save original grayscale
+    saveDebugImage(image, width, height, "debug_1_grayscale.png");
+
+    // Enhance contrast with gentler parameters
+    stretchHistogram(image, 2.0f, 98.0f); // Less aggressive stretch
+    saveDebugImage(image, width, height, "debug_2_stretched.png");
+
+    // Normalize with gentler contrast enhancement
     normalizeImage(image);
+    saveDebugImage(image, width, height, "debug_3_normalized.png");
 
-    // Apply Gaussian blur to reduce noise
-    gaussianBlur(image, width, height, 1.0f);
+    // Apply Gaussian blur with smaller sigma
+    gaussianBlur(image, width, height, 0.8f);
+    saveDebugImage(image, width, height, "debug_4_blurred.png");
 
-    // Apply adaptive thresholding with moderate parameters
-    adaptiveThreshold(image, width, height, 21, 7.0f);
+    // Apply adaptive thresholding with larger window and smaller C
+    adaptiveThreshold(image, width, height, 31, 3.0f);
+    saveDebugImage(image, width, height, "debug_5_thresholded.png");
 
-    // Morphological operations to enhance barcode bars
+    // Morphological operations with smaller kernels
     erode(image, width, height, 2);
+    saveDebugImage(image, width, height, "debug_6_eroded.png");
+    
     dilate(image, width, height, 2);
+    saveDebugImage(image, width, height, "debug_7_dilated.png");
 
     return toImageView(image, width, height);
 }

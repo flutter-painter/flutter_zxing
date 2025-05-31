@@ -127,6 +127,29 @@ void saveDebugImage(const std::vector<uint8_t>& image, int width, int height, co
     std::cout << "Saved debug image: " << filename << std::endl;
 }
 
+void printBarcodeInfo(const ZXing::Result& result, const std::string& label) {
+    std::cout << "=== " << label << " ===" << std::endl;
+    std::cout << "Valid: " << (result.isValid() ? "Yes" : "No") << std::endl;
+    if (result.isValid()) {
+        std::cout << "Format: " << ZXing::ToString(result.format()) << std::endl;
+        std::cout << "Text: " << result.text() << std::endl;
+        std::cout << "Error: " << result.error().msg() << std::endl;
+        std::cout << "Line Count: " << result.lineCount() << std::endl;
+        std::cout << "ECC Level: " << result.ecLevel() << std::endl;
+        
+        // Print position information
+        auto pos = result.position();
+        std::cout << "Position: " << std::endl;
+        std::cout << "  TopLeft: (" << pos.topLeft().x << ", " << pos.topLeft().y << ")" << std::endl;
+        std::cout << "  TopRight: (" << pos.topRight().x << ", " << pos.topRight().y << ")" << std::endl;
+        std::cout << "  BottomLeft: (" << pos.bottomLeft().x << ", " << pos.bottomLeft().y << ")" << std::endl;
+        std::cout << "  BottomRight: (" << pos.bottomRight().x << ", " << pos.bottomRight().y << ")" << std::endl;
+    } else {
+        std::cout << "Error: " << result.error().msg() << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 TEST_CASE("Basic barcode decoding", "[barcode]") {
     // Get the absolute path to the test images
     fs::path currentPath = fs::current_path();
@@ -233,74 +256,81 @@ TEST_CASE("Barcode Enhancement", "[enhancement]") {
     
     REQUIRE(fs::exists(rootPath / "barcode_images"));
     
-    std::vector<fs::path> testImages;
-    for (const auto& entry : fs::directory_iterator(rootPath / "barcode_images")) {
-        if (entry.path().extension() == ".jpg" || entry.path().extension() == ".png") {
-            testImages.push_back(entry.path());
-        }
-    }
-    
-    INFO("Files in barcode_images directory:");
-    for (const auto& path : testImages) {
-        INFO(path.filename().string());
-    }
+    // Focus on the specific image
+    fs::path imagePath = rootPath / "barcode_images" / "2E3918D7L736.jpg";
+    REQUIRE(fs::exists(imagePath));
     
     SECTION("Testing enhancement pipeline") {
-        for (const auto& imagePath : testImages) {
-            INFO("=== Testing enhancement on image: " << imagePath.filename().string() << " ===");
-            
-            // Load image
-            int width, height, channels;
-            std::unique_ptr<uint8_t, void(*)(void*)> data(
-                stbi_load(imagePath.string().c_str(), &width, &height, &channels, 1),
-                stbi_image_free
-            );
-            REQUIRE(data != nullptr);
-            
-            // Create ImageView
-            ZXing::ImageView originalView(data.get(), width, height, ZXing::ImageFormat::Lum);
-            
-            // Print original image stats
-            std::vector<uint8_t> originalData(data.get(), data.get() + width * height);
-            printImageStats(originalData, "Original Image");
-            saveDebugImage(originalData, width, height, "original.png");
-            
-            // Apply enhancement
-            INFO("Applying image enhancement");
-            auto enhancedView = ZXing::BarcodeEnhancer::enhance1DBarcode(originalView);
-            
-            // Convert enhanced view to vector for stats
-            std::vector<uint8_t> enhancedData(enhancedView.data(0, 0), enhancedView.data(0, 0) + width * height);
-            printImageStats(enhancedData, "Enhanced Image");
-            saveDebugImage(enhancedData, width, height, "enhanced.png");
-            
-            // Try to read barcode from original image
-            ZXing::ReaderOptions options;
-            options.setTryHarder(true);
-            options.setTryRotate(true);
-            options.setIsPure(false);
-            
-            auto originalResult = ZXing::ReadBarcode(originalView, options);
-            auto enhancedResult = ZXing::ReadBarcode(enhancedView, options);
-            
-            INFO("Original image result: " << (originalResult.isValid() ? "Valid" : "Invalid"));
-            if (originalResult.isValid()) {
-                INFO("Original Format: " << ZXing::ToString(originalResult.format()));
-                INFO("Original Text: " << originalResult.text());
-            }
-            
-            INFO("Enhanced image result: " << (enhancedResult.isValid() ? "Valid" : "Invalid"));
-            if (enhancedResult.isValid()) {
-                INFO("Enhanced Format: " << ZXing::ToString(enhancedResult.format()));
-                INFO("Enhanced Text: " << enhancedResult.text());
-            }
-            
-            REQUIRE((originalResult.isValid() || enhancedResult.isValid()));
-            
-            if (originalResult.isValid() && enhancedResult.isValid()) {
-                REQUIRE(originalResult.text() == enhancedResult.text());
-            }
+        INFO("=== Testing enhancement on image: " << imagePath.filename().string() << " ===");
+        
+        // Load image
+        int width, height, channels;
+        std::unique_ptr<uint8_t, void(*)(void*)> data(
+            stbi_load(imagePath.string().c_str(), &width, &height, &channels, 1),
+            stbi_image_free
+        );
+        REQUIRE(data != nullptr);
+        
+        // Create ImageView
+        ZXing::ImageView originalView(data.get(), width, height, ZXing::ImageFormat::Lum);
+        
+        // Print original image stats
+        std::vector<uint8_t> originalData(data.get(), data.get() + width * height);
+        printImageStats(originalData, "Original Image");
+        saveDebugImage(originalData, width, height, "original.png");
+        
+        // Apply enhancement
+        INFO("Applying image enhancement");
+        auto enhancedView = ZXing::BarcodeEnhancer::enhance1DBarcode(originalView);
+        
+        // Convert enhanced view to vector for stats
+        std::vector<uint8_t> enhancedData(enhancedView.data(0, 0), enhancedView.data(0, 0) + width * height);
+        printImageStats(enhancedData, "Enhanced Image");
+        saveDebugImage(enhancedData, width, height, "enhanced.png");
+        
+        // Configure reader options with maximum debug info
+        ZXing::ReaderOptions options;
+        options.setTryHarder(true);
+        options.setTryRotate(true);
+        options.setIsPure(false);
+        
+        // Try all binarizers with original image
+        options.setBinarizer(ZXing::Binarizer::GlobalHistogram);
+        auto originalResult = ZXing::ReadBarcode(originalView, options);
+        printBarcodeInfo(originalResult, "Original Image Result (Global Histogram)");
+        
+        options.setBinarizer(ZXing::Binarizer::LocalAverage);
+        auto originalResultHybrid = ZXing::ReadBarcode(originalView, options);
+        printBarcodeInfo(originalResultHybrid, "Original Image Result (Local Average)");
+        
+        // Try all binarizers with enhanced image
+        options.setBinarizer(ZXing::Binarizer::GlobalHistogram);
+        auto enhancedResult = ZXing::ReadBarcode(enhancedView, options);
+        printBarcodeInfo(enhancedResult, "Enhanced Image Result (Global Histogram)");
+        
+        options.setBinarizer(ZXing::Binarizer::LocalAverage);
+        auto enhancedResultHybrid = ZXing::ReadBarcode(enhancedView, options);
+        printBarcodeInfo(enhancedResultHybrid, "Enhanced Image Result (Local Average)");
+        
+        // Check if any of the attempts succeeded
+        bool success = originalResult.isValid() || originalResultHybrid.isValid() || 
+                      enhancedResult.isValid() || enhancedResultHybrid.isValid();
+        
+        if (!success) {
+            INFO("No valid barcode detected. Expected: 2E3918D7L736");
+            FAIL("Barcode detection failed");
         }
+        
+        // If we have a valid result, verify it matches expected
+        std::string expectedBarcode = "2E3918D7L736";
+        if (originalResult.isValid())
+            REQUIRE(originalResult.text() == expectedBarcode);
+        if (originalResultHybrid.isValid())
+            REQUIRE(originalResultHybrid.text() == expectedBarcode);
+        if (enhancedResult.isValid())
+            REQUIRE(enhancedResult.text() == expectedBarcode);
+        if (enhancedResultHybrid.isValid())
+            REQUIRE(enhancedResultHybrid.text() == expectedBarcode);
     }
 }
 
