@@ -4,11 +4,11 @@
 #include <memory>
 #include <numeric>
 #include <cstring>
-#include <stb_image_write.h>
+#include <iostream>
 
 namespace ZXing {
 
-std::vector<uint8_t> BarcodeEnhancer::convertToGrayscale(const ImageView& input) {
+std::vector<uint8_t> Code128Enhancer::convertToGrayscale(const ImageView& input) {
     int width = input.width();
     int height = input.height();
     std::vector<uint8_t> result(width * height);
@@ -32,200 +32,73 @@ std::vector<uint8_t> BarcodeEnhancer::convertToGrayscale(const ImageView& input)
     return result;
 }
 
-void BarcodeEnhancer::gaussianBlur(std::vector<uint8_t>& image, int width, int height, float sigma) {
+void Code128Enhancer::gaussianBlur(std::vector<uint8_t>& image, int width, int height, float sigma) {
+    if (width <= 0 || height <= 0 || image.size() != static_cast<size_t>(width * height)) {
+        return;
+    }
+
     // Create Gaussian kernel
-    int kernelSize = static_cast<int>(std::ceil(sigma * 6));
-    if (kernelSize % 2 == 0) kernelSize++;
-    
+    const int kernelSize = static_cast<int>(std::ceil(sigma * 3) * 2 + 1);
+    const int kernelRadius = kernelSize / 2;
     std::vector<float> kernel(kernelSize);
     float sum = 0.0f;
-    int center = kernelSize / 2;
-    
+
     for (int i = 0; i < kernelSize; i++) {
-        float x = static_cast<float>(i - center);
+        float x = static_cast<float>(i - kernelRadius);
         kernel[i] = std::exp(-(x * x) / (2 * sigma * sigma));
         sum += kernel[i];
     }
-    
+
     // Normalize kernel
-    for (float& k : kernel) {
-        k /= sum;
+    for (int i = 0; i < kernelSize; i++) {
+        kernel[i] /= sum;
     }
-    
+
     // Apply horizontal blur
     std::vector<uint8_t> temp(width * height);
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float sum = 0.0f;
             float weightSum = 0.0f;
-            
-            for (int k = -center; k <= center; k++) {
-                int px = x + k;
-                if (px >= 0 && px < width) {
-                    float weight = kernel[k + center];
-                    sum += image[y * width + px] * weight;
+
+            for (int i = -kernelRadius; i <= kernelRadius; i++) {
+                int nx = x + i;
+                if (nx >= 0 && nx < width) {
+                    float weight = kernel[i + kernelRadius];
+                    sum += image[y * width + nx] * weight;
                     weightSum += weight;
                 }
             }
-            
-            temp[y * width + x] = static_cast<uint8_t>(sum / weightSum);
+
+            temp[y * width + x] = static_cast<uint8_t>(std::clamp(sum / weightSum, 0.0f, 255.0f));
         }
     }
-    
+
     // Apply vertical blur
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
             float sum = 0.0f;
             float weightSum = 0.0f;
-            
-            for (int k = -center; k <= center; k++) {
-                int py = y + k;
-                if (py >= 0 && py < height) {
-                    float weight = kernel[k + center];
-                    sum += temp[py * width + x] * weight;
+
+            for (int i = -kernelRadius; i <= kernelRadius; i++) {
+                int ny = y + i;
+                if (ny >= 0 && ny < height) {
+                    float weight = kernel[i + kernelRadius];
+                    sum += temp[ny * width + x] * weight;
                     weightSum += weight;
                 }
             }
-            
-            image[y * width + x] = static_cast<uint8_t>(sum / weightSum);
+
+            image[y * width + x] = static_cast<uint8_t>(std::clamp(sum / weightSum, 0.0f, 255.0f));
         }
     }
 }
 
-void BarcodeEnhancer::adaptiveThreshold(std::vector<uint8_t>& image, int width, int height, int windowSize, float C) {
-    std::vector<uint8_t> temp = image;
-    int halfWindow = windowSize / 2;
-    
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            // Calculate local mean
-            int count = 0;
-            int sum = 0;
-            
-            for (int wy = -halfWindow; wy <= halfWindow; wy++) {
-                int py = y + wy;
-                if (py < 0 || py >= height) continue;
-                
-                for (int wx = -halfWindow; wx <= halfWindow; wx++) {
-                    int px = x + wx;
-                    if (px < 0 || px >= width) continue;
-                    
-                    sum += temp[py * width + px];
-                    count++;
-                }
-            }
-            
-            float mean = static_cast<float>(sum) / count;
-            uint8_t threshold = static_cast<uint8_t>(mean - C);
-            image[y * width + x] = (temp[y * width + x] < threshold) ? 0 : 255;
-        }
-    }
-}
-
-void BarcodeEnhancer::erode(std::vector<uint8_t>& image, int width, int height, int kernelSize) {
-    std::vector<uint8_t> temp = image;
-    int halfKernel = kernelSize / 2;
-    
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            uint8_t minVal = 255;
-            
-            for (int ky = -halfKernel; ky <= halfKernel; ky++) {
-                int py = y + ky;
-                if (py < 0 || py >= height) continue;
-                
-                for (int kx = -halfKernel; kx <= halfKernel; kx++) {
-                    int px = x + kx;
-                    if (px < 0 || px >= width) continue;
-                    
-                    minVal = std::min(minVal, temp[py * width + px]);
-                }
-            }
-            
-            image[y * width + x] = minVal;
-        }
-    }
-}
-
-void BarcodeEnhancer::dilate(std::vector<uint8_t>& image, int width, int height, int kernelSize) {
-    std::vector<uint8_t> temp = image;
-    int halfKernel = kernelSize / 2;
-    
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            uint8_t maxVal = 0;
-            
-            for (int ky = -halfKernel; ky <= halfKernel; ky++) {
-                int py = y + ky;
-                if (py < 0 || py >= height) continue;
-                
-                for (int kx = -halfKernel; kx <= halfKernel; kx++) {
-                    int px = x + kx;
-                    if (px < 0 || px >= width) continue;
-                    
-                    maxVal = std::max(maxVal, temp[py * width + px]);
-                }
-            }
-            
-            image[y * width + x] = maxVal;
-        }
-    }
-}
-
-ImageView BarcodeEnhancer::toImageView(const std::vector<uint8_t>& image, int width, int height) {
-    // Create a copy of the image data that will be owned by the ImageView
-    uint8_t* data = new uint8_t[width * height];
-    std::memcpy(data, image.data(), width * height);
-    
-    // Return ImageView with the copied data
-    return ImageView(data, width, height, ImageFormat::Lum);
-}
-
-void saveDebugImage(const std::vector<uint8_t>& image, int width, int height, const char* filename) {
-    stbi_write_png(filename, width, height, 1, image.data(), width);
-}
-
-ImageView BarcodeEnhancer::enhance1DBarcode(const ImageView& input) {
-    // Convert to grayscale if needed
-    std::vector<uint8_t> image = convertToGrayscale(input);
-    int width = input.width();
-    int height = input.height();
-
-    // Save original grayscale
-    saveDebugImage(image, width, height, "debug_1_grayscale.png");
-
-    // Enhance contrast with gentler parameters
-    stretchHistogram(image, 2.0f, 98.0f); // Less aggressive stretch
-    saveDebugImage(image, width, height, "debug_2_stretched.png");
-
-    // Normalize with gentler contrast enhancement
-    normalizeImage(image);
-    saveDebugImage(image, width, height, "debug_3_normalized.png");
-
-    // Apply Gaussian blur with smaller sigma
-    gaussianBlur(image, width, height, 0.8f);
-    saveDebugImage(image, width, height, "debug_4_blurred.png");
-
-    // Apply adaptive thresholding with larger window and smaller C
-    adaptiveThreshold(image, width, height, 31, 3.0f);
-    saveDebugImage(image, width, height, "debug_5_thresholded.png");
-
-    // Morphological operations with smaller kernels
-    erode(image, width, height, 2);
-    saveDebugImage(image, width, height, "debug_6_eroded.png");
-    
-    dilate(image, width, height, 2);
-    saveDebugImage(image, width, height, "debug_7_dilated.png");
-
-    return toImageView(image, width, height);
-}
-
-void BarcodeEnhancer::enhanceContrast(std::vector<uint8_t>& image) {
-    if (image.empty()) return;
+void Code128Enhancer::adaptiveThreshold(std::vector<uint8_t>& image, int width, int height, int blockSize, float C) {
+    if (image.empty() || width <= 0 || height <= 0) return;
 
     // Calculate mean and standard deviation
-    double sum = 0.0;
-    double sumSq = 0.0;
+    double sum = 0.0, sumSq = 0.0;
     for (uint8_t pixel : image) {
         sum += pixel;
         sumSq += pixel * pixel;
@@ -234,84 +107,241 @@ void BarcodeEnhancer::enhanceContrast(std::vector<uint8_t>& image) {
     double variance = (sumSq / image.size()) - (mean * mean);
     double stdDev = std::sqrt(variance);
 
-    // Apply contrast enhancement
-    double alpha = 2.0; // Contrast factor
-    for (auto& pixel : image) {
-        double normalized = (pixel - mean) / stdDev;
-        double enhanced = mean + (normalized * alpha * stdDev);
-        pixel = static_cast<uint8_t>(std::clamp(enhanced, 0.0, 255.0));
-    }
-}
+    // Adjust parameters based on image statistics
+    bool isHighValueImage = mean > 120;
+    float adaptiveC = isHighValueImage ? C * 0.7f : C;  // Lower threshold offset for bright images
+    int adaptiveBlockSize = isHighValueImage ? blockSize * 3/2 : blockSize;  // Larger window for bright images
 
-void BarcodeEnhancer::normalizeImage(std::vector<uint8_t>& image) {
-    if (image.empty()) return;
+    // Create a copy of the original image
+    std::vector<uint8_t> result = image;
 
-    // Find min and max values
-    uint8_t minVal = *std::min_element(image.begin(), image.end());
-    uint8_t maxVal = *std::max_element(image.begin(), image.end());
+    // Ensure block size is odd
+    adaptiveBlockSize = (adaptiveBlockSize % 2 == 0) ? adaptiveBlockSize + 1 : adaptiveBlockSize;
+    int offset = adaptiveBlockSize / 2;
 
-    if (maxVal == minVal) return;
+    // For each pixel
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            // Calculate local mean
+            double localSum = 0.0;
+            int count = 0;
 
-    // Normalize to full range [0, 255]
-    for (auto& pixel : image) {
-        pixel = static_cast<uint8_t>((static_cast<float>(pixel - minVal) / (maxVal - minVal)) * 255);
-    }
-}
+            // Define block boundaries with edge handling
+            int startY = std::max(0, y - offset);
+            int endY = std::min(height - 1, y + offset);
+            int startX = std::max(0, x - offset);
+            int endX = std::min(width - 1, x + offset);
 
-void BarcodeEnhancer::stretchHistogram(std::vector<uint8_t>& image, float lowPercentile, float highPercentile) {
-    if (image.empty()) return;
+            // Calculate weighted sum (pixels closer to center have more influence)
+            for (int by = startY; by <= endY; by++) {
+                for (int bx = startX; bx <= endX; bx++) {
+                    double weight = 1.0 - (std::abs(by - y) + std::abs(bx - x)) / (2.0 * offset);
+                    localSum += image[by * width + bx] * weight;
+                    count++;
+                }
+            }
 
-    // Create histogram
-    std::vector<int> histogram(256, 0);
-    for (uint8_t pixel : image) {
-        histogram[pixel]++;
-    }
+            double threshold = (localSum / count) - adaptiveC;
+            
+            // For bright images, use a more sophisticated thresholding
+            if (isHighValueImage) {
+                // Calculate local contrast
+                double localStdDev = 0.0;
+                for (int by = startY; by <= endY; by++) {
+                    for (int bx = startX; bx <= endX; bx++) {
+                        double diff = image[by * width + bx] - (localSum / count);
+                        localStdDev += diff * diff;
+                    }
+                }
+                localStdDev = std::sqrt(localStdDev / count);
 
-    // Calculate cumulative histogram
-    std::vector<int> cumulative(256, 0);
-    cumulative[0] = histogram[0];
-    for (int i = 1; i < 256; i++) {
-        cumulative[i] = cumulative[i-1] + histogram[i];
-    }
+                // Adjust threshold based on local contrast
+                if (localStdDev < stdDev * 0.5) {
+                    // Low contrast region - be more conservative
+                    threshold = (localSum / count) - adaptiveC * 0.5;
+                } else {
+                    // High contrast region - be more aggressive
+                    threshold = (localSum / count) - adaptiveC * 1.2;
+                }
+            }
 
-    // Find percentile values
-    int totalPixels = image.size();
-    int lowCount = static_cast<int>((lowPercentile / 100.0f) * totalPixels);
-    int highCount = static_cast<int>((highPercentile / 100.0f) * totalPixels);
-
-    uint8_t lowValue = 0;
-    uint8_t highValue = 255;
-
-    for (int i = 0; i < 256; i++) {
-        if (cumulative[i] >= lowCount) {
-            lowValue = static_cast<uint8_t>(i);
-            break;
+            result[y * width + x] = (image[y * width + x] < threshold) ? 0 : 255;
         }
     }
 
-    for (int i = 255; i >= 0; i--) {
-        if (cumulative[i] <= highCount) {
-            highValue = static_cast<uint8_t>(i);
-            break;
-        }
-    }
-
-    // Apply histogram stretch
-    float scale = 255.0f / (highValue - lowValue);
-    for (auto& pixel : image) {
-        if (pixel <= lowValue) {
-            pixel = 0;
-        } else if (pixel >= highValue) {
-            pixel = 255;
-        } else {
-            pixel = static_cast<uint8_t>((pixel - lowValue) * scale);
-        }
-    }
+    // Copy result back to input image
+    image = std::move(result);
 }
 
-std::vector<uint8_t> BarcodeEnhancer::createKernel(int size) {
-    std::vector<uint8_t> kernel(size * size, 1);
-    return kernel;
+ImageView Code128Enhancer::toImageView(const std::vector<uint8_t>& image, int width, int height) {
+    // Create a copy of the image data that will be owned by the ImageView
+    uint8_t* data = new uint8_t[width * height];
+    std::memcpy(data, image.data(), width * height);
+    
+    // Return ImageView with the copied data
+    return ImageView(data, width, height, ImageFormat::Lum);
+}
+
+ImageView Code128Enhancer::rotateImage(const ImageView& input, int degrees) {
+    int width = input.width();
+    int height = input.height();
+    
+    // Normalize degrees to 0-360
+    degrees = ((degrees % 360) + 360) % 360;
+    
+    // Only handle 90-degree rotations for now
+    if (degrees % 90 != 0) {
+        return input;
+    }
+    
+    // Create output buffer
+    std::unique_ptr<uint8_t[]> outputBuffer;
+    int outWidth, outHeight;
+    
+    if (degrees == 90 || degrees == 270) {
+        outWidth = height;
+        outHeight = width;
+        outputBuffer = std::make_unique<uint8_t[]>(width * height);
+        
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (degrees == 90) {
+                    outputBuffer[x * height + (height - 1 - y)] = input.data()[y * width + x];
+                } else {  // 270 degrees
+                    outputBuffer[(width - 1 - x) * height + y] = input.data()[y * width + x];
+                }
+            }
+        }
+    } else if (degrees == 180) {
+        outWidth = width;
+        outHeight = height;
+        outputBuffer = std::make_unique<uint8_t[]>(width * height);
+        
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                outputBuffer[(height - 1 - y) * width + (width - 1 - x)] = input.data()[y * width + x];
+            }
+        }
+    } else {  // 0 or 360 degrees
+        return input;
+    }
+    
+    return ImageView(outputBuffer.release(), outWidth, outHeight, ImageFormat::Lum);
+}
+
+ImageView Code128Enhancer::cropImage(const ImageView& input, int x, int y, int width, int height) {
+    // Validate input parameters
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 ||
+        x + width > input.width() || y + height > input.height()) {
+        return input;
+    }
+    
+    // Create output buffer
+    std::unique_ptr<uint8_t[]> outputBuffer = std::make_unique<uint8_t[]>(width * height);
+    
+    // Copy region
+    for (int ry = 0; ry < height; ry++) {
+        std::memcpy(
+            outputBuffer.get() + ry * width,
+            input.data() + (y + ry) * input.width() + x,
+            width
+        );
+    }
+    
+    return ImageView(outputBuffer.release(), width, height, ImageFormat::Lum);
+}
+
+ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInvert) {
+    // Validate input
+    if (!input.data() || input.width() <= 0 || input.height() <= 0) {
+        std::cout << "Invalid input image" << std::endl;
+        return input;
+    }
+
+    // Try decoding original image first with Code 128 specific options
+    ReaderOptions opts;
+    opts.setTryHarder(true);
+    opts.setTryRotate(true);
+    opts.setIsPure(false);
+    opts.setBinarizer(Binarizer::LocalAverage);
+    opts.setFormats(BarcodeFormat::Code128);
+    opts.setMinLineCount(2);
+
+    auto result = ReadBarcode(input, opts);
+    if (result.isValid()) {
+        std::cout << "Original image is decodable, returning as is" << std::endl;
+        return input;
+    }
+
+    // Convert to grayscale and keep data alive
+    std::vector<uint8_t> image = convertToGrayscale(input);
+    int width = input.width();
+    int height = input.height();
+
+    // Code 128 specific parameters
+    const int minModuleWidth = 1;  // More permissive minimum width
+    const int maxModuleWidth = 8;  // Maximum width of a module in pixels
+    const int quietZoneWidth = 10;  // Quiet zone should be 10x module width
+    const double minContrast = 0.2;  // More permissive minimum contrast
+    const int verticalRedundancy = static_cast<int>(height * 0.1);  // Use 10% of height for averaging
+
+    std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
+    std::cout << "- Min module width: " << minModuleWidth << std::endl;
+    std::cout << "- Max module width: " << maxModuleWidth << std::endl;
+    std::cout << "- Quiet zone width: " << quietZoneWidth << std::endl;
+    std::cout << "- Min contrast: " << minContrast << std::endl;
+    std::cout << "- Vertical redundancy: " << verticalRedundancy << std::endl;
+
+    // Apply vertical averaging to reduce noise
+    std::vector<uint8_t> verticalAveraged(width * height);
+    for (int y = 0; y < height; y++) {
+        int startY = std::max(0, y - verticalRedundancy/2);
+        int endY = std::min(height - 1, y + verticalRedundancy/2);
+        for (int x = 0; x < width; x++) {
+            int sum = 0;
+            for (int avgY = startY; avgY <= endY; avgY++) {
+                sum += image[avgY * width + x];
+            }
+            verticalAveraged[y * width + x] = static_cast<uint8_t>(sum / (endY - startY + 1));
+        }
+    }
+
+    // Apply adaptive thresholding with Code 128 specific parameters
+    int blockSize = std::max(minModuleWidth * 8, 15);  // Block size based on module width
+    float C = 5.0f;  // Threshold adjustment
+    adaptiveThreshold(verticalAveraged, width, height, blockSize, C);
+
+    // Try decoding after thresholding
+    std::unique_ptr<uint8_t[]> thresholdBuffer(new uint8_t[width * height]);
+    std::memcpy(thresholdBuffer.get(), verticalAveraged.data(), width * height);
+    ImageView thresholdView(thresholdBuffer.get(), width, height, ImageFormat::Lum);
+
+    result = ReadBarcode(thresholdView, opts);
+    if (result.isValid()) {
+        std::cout << "Thresholded image is decodable, returning it" << std::endl;
+        return thresholdView;
+    }
+
+    // If we get here, try with inversion if requested
+    if (shouldInvert) {
+        for (int i = 0; i < width * height; i++) {
+            verticalAveraged[i] = 255 - verticalAveraged[i];
+        }
+
+        std::unique_ptr<uint8_t[]> invertedBuffer(new uint8_t[width * height]);
+        std::memcpy(invertedBuffer.get(), verticalAveraged.data(), width * height);
+        ImageView invertedView(invertedBuffer.get(), width, height, ImageFormat::Lum);
+
+        result = ReadBarcode(invertedView, opts);
+        if (result.isValid()) {
+            std::cout << "Inverted image is decodable, returning it" << std::endl;
+            return invertedView;
+        }
+    }
+
+    // If nothing worked, return the original image
+    std::cout << "No enhancement was successful, returning original image" << std::endl;
+    return input;
 }
 
 } // namespace ZXing 

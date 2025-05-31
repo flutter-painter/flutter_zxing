@@ -1,7 +1,41 @@
 # Flutter ZXing
 
+## test C++ Zxing
+cd build ; cmake .. ; cmake --build . ; 
+.\\Debug\\barcode_tests.exe
 
-cd build ; cmake .. ; cmake --build . ; ./barcode_tests
+./barcode_tests
+
+The debug images are being saved as:
+
+***
+
+we removed partial region scanning, as it brought complexity and no gain 
+we left yolo pipeline because it brought dependency nightmare, made the thing async and we did not demonstrate it led to better results
+
+also removed of the complex enhancement techniques weren't necessary and sometimes even made things worse
+Gaussian blur, Bar width correction, Quiet zone validation, Contrast enhancement, Histogram stretching, Skew detection and correction
+
+
+Start with Dynamic Module Width Estimation - this requires no external libraries and will make your existing algorithms more adaptive.
+
+Add Directional Filtering - this is a lightweight preprocessing step that will enhance the horizontal pattern of Code 128 barcodes.
+
+
+other techniques to consider :
+
+Directional Filtering: Code 128 has a specific horizontal pattern. Implementing a 1D directional filter that enhances horizontal patterns while reducing vertical noise could improve detection.
+Dynamic Module Width Estimation: Your code uses fixed parameters for minimum and maximum module widths. Implementing dynamic estimation of these widths based on image analysis could make the algorithm more adaptable.
+Multi-Scale Processing: Process the image at multiple scales to handle barcodes of different sizes and resolutions. This could be particularly useful for distant or small barcodes.
+Machine Learning-Based Region Proposal: Use a lightweight ML model to identify potential barcode regions before detailed processing.
+Frequency Domain Processing: Code 128 has a distinctive frequency signature. Using FFT (Fast Fourier Transform) to analyze and enhance the barcode pattern in the frequency domain could be effective.
+Adaptive Bar Width Correction: Your correctBarWidths function exists but isn't used in the main pipeline. An enhanced version that adapts to the specific characteristics of Code 128 could be valuable.
+Morphological Operations: Specific sequences of dilation and erosion operations tailored for Code 128's structure could clean up the image while preserving the critical barcode information.
+Contrast Limited Adaptive Histogram Equalization (CLAHE): This could improve local contrast without amplifying noise, making barcodes more detectable in challenging lighting conditions.
+Perspective Correction: Detecting and correcting perspective distortion before barcode reading could significantly improve results for non-flat barcodes.
+Integration of Underused Functions: You already have several sophisticated functions like calculateSkewAngle, correctBarWidths, and validateQuietZones that aren't currently used in the main pipeline but could be valuable.
+
+***
 
 
 cd .. && git submodule update --init --recursive
@@ -25,6 +59,7 @@ Flutter ZXing is a high-performance Flutter plugin for scanning and generating Q
 ## Table of Contents
 
 - [Flutter ZXing](#flutter-zxing)
+  - [test C++ Zxing](#test-c-zxing)
   - [Table of Contents](#table-of-contents)
   - [Demo Screenshots](#demo-screenshots)
   - [Features](#features)

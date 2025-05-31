@@ -6,11 +6,11 @@ import 'package:path/path.dart' as path;
 void main() {
   group('Barcode Enhancement Tests', () {
     final testImages = [
-      '800446E 01XL.jpg',
-      '800165E 01L.jpg',
+      '800446E_01XL.jpg',
+      '800446E_01XL_zoom2.jpg',
+      '800165E_01L.jpg',
       '2E3918D7L736.jpg',
-      '257670HA64SM.jpg',
-      '1H1406D40232.jpg'
+      '257670HA64SM.jpg'
     ];
 
     for (final imageName in testImages) {

@@ -26,6 +26,7 @@ add_definitions(-DUNICODE -D_UNICODE -DZXING_READERS)
 
 # Add stb_image header-only library
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Add ZXing library
 add_subdirectory(src/zxing/core)
