@@ -247,7 +247,7 @@ CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
         code128Opts.setTryDownscale(true);  // Try downscaling for better detection
         
         // Use the enhanced image with Code 128 specific options
-        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false);
+        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false, false);
         result = ReadBarcode(enhancedImage, code128Opts);
         
         // If no barcode found, fall back to original image
@@ -294,7 +294,7 @@ CodeResults _readBarcodes(const DecodeBarcodeParams& params) noexcept
         code128Opts.setTryDownscale(true);  // Try downscaling for better detection
         
         // Use the enhanced image with Code 128 specific options
-        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false);
+        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false, false);
         results = ReadBarcodes(enhancedImage, code128Opts);
         
         // If no barcodes found, fall back to original image

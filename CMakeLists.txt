@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add compiler flags for C++20 features
 if(MSVC)
-    add_compile_options(/std:c++20 /Zc:__cplusplus)
+    add_compile_options(/std:c++20 /Zc:__cplusplus /FS)
 else()
     add_compile_options(-std=c++20)
 endif()

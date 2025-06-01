@@ -18,7 +18,7 @@ namespace ZXing {
 class Code128Enhancer {
 public:
     // Main enhancement function - currently used in production
-    static ImageView enhanceBarcode(const ImageView& input, bool shouldInvert = false);
+    static ImageView enhanceBarcode(const ImageView& input, bool shouldInvert = false, bool isTest = false);
 
     // Image manipulation helpers - currently used in production
     static ImageView rotateImage(const ImageView& input, int degrees);
@@ -29,6 +29,7 @@ private:
     static std::vector<uint8_t> convertToGrayscale(const ImageView& input);
     static void adaptiveThreshold(std::vector<uint8_t>& image, int width, int height, int blockSize, float C);
     static ImageView toImageView(const std::vector<uint8_t>& image, int width, int height);
+    static void applyDirectionalFilter(std::vector<uint8_t>& image, int width, int height, int kernelSize = 5);
 
     // === Experimental/Unused Enhancement Functions ===
     // These functions were developed during testing but were found to be unnecessary

@@ -8,7 +8,7 @@ By setting ZXING_READERS to ON in the CMake configuration, we ensure that the ac
 
 
 ## test C++ Zxing
-cd build ; cmake .. ; cmake --build . ; 
+cd fresh_build ; cmake .. ; cmake --build . ; 
 .\\Debug\\barcode_tests.exe
 
 ./barcode_tests

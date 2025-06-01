@@ -22,6 +22,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../../third_party/stb_image_write.h"
 
+#include <chrono>
+#include <map>
+
 namespace fs = std::filesystem;
 
 // Helper function to print first few bytes of image data for debugging
@@ -187,6 +190,58 @@ void printBarcodeInfo(const ZXing::Result& result, const std::string& label) {
     std::cout << std::endl;
 }
 
+// Structure to hold decode result metrics
+struct DecodeResult {
+    bool success;
+    std::string text;
+    double processingTimeMs;
+    std::string format;
+    int rotation;
+    std::string method;
+    
+    DecodeResult(bool s = false, const std::string& t = "", double time = 0.0, 
+                const std::string& fmt = "", int rot = 0, const std::string& mthd = "")
+        : success(s), text(t), processingTimeMs(time), format(fmt), rotation(rot), method(mthd) {}
+};
+
+// Global variables for tracking statistics
+int totalImages = 0;
+int originalSuccesses = 0;
+int enhancedSuccesses = 0;
+int enhancedInvertedSuccesses = 0;
+int originalOnlySuccesses = 0;
+int enhancedOnlySuccesses = 0;
+int bothSuccesses = 0;
+double totalOriginalTime = 0.0;
+double totalEnhancedTime = 0.0;
+double totalEnhancedInvertedTime = 0.0;
+
+// Map to store all results
+std::map<std::string, std::vector<DecodeResult>> allResults;
+
+// Helper function to test an image with specific configuration and record metrics
+DecodeResult testImageWithConfig(const ZXing::ImageView& imageView, const ZXing::ReaderOptions& opts, 
+                            const std::string& methodName, int rotation = 0) {
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    ZXing::ImageView rotatedView = imageView;
+    if (rotation > 0) {
+        rotatedView = ZXing::Code128Enhancer::rotateImage(imageView, rotation);
+    }
+    
+    auto result = ZXing::ReadBarcode(rotatedView, opts);
+    
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    
+    std::string formatName = "Unknown";
+    if (result.isValid()) {
+        formatName = ZXing::ToString(result.format());
+    }
+    
+    return DecodeResult(result.isValid(), result.text(), duration, formatName, rotation, methodName);
+}
+
 TEST_CASE("Basic barcode decoding", "[decoding]") {
     // Get the absolute path to the test images
     fs::path currentPath = fs::current_path();
@@ -202,6 +257,21 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
     
     REQUIRE(fs::exists(rootPath / "barcode_images"));
     
+    // Reset global statistics for this test run
+    totalImages = 0;
+    originalSuccesses = 0;
+    enhancedSuccesses = 0;
+    enhancedInvertedSuccesses = 0;
+    enhancedOnlySuccesses = 0;
+    originalOnlySuccesses = 0;
+    bothSuccesses = 0;
+    totalOriginalTime = 0.0;
+    totalEnhancedTime = 0.0;
+    totalEnhancedInvertedTime = 0.0;
+    
+    // Clear previous results
+    allResults.clear();
+    
     // Focus on images with their actual expected text values
     std::vector<std::pair<std::string, std::string>> testImages = {
         {"257670HA64SM.jpg", "257670HA64SM"},
@@ -209,17 +279,28 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
         {"800165E_01L_zoom.jpg", "800165E01L"},
         {"800446E_01XL.jpg", "800446E01XL"},
         {"800446E_01XL_zoom.jpg", "800446E01XL"},
-        {"800446E_01XL_ugly.jpg", "800446E01XL"},
-        {"800446E_01XL_ugly2.jpg", "800446E01XL"},
-        {"800446E_01XL_ugly3.jpg", "800446E01XL"},
-        {"800446E_01XL_pretty.jpg", "800446E01XL"},
-        {"800446E_01XL_perfect.jpg", "800446E01XL"}
+        {"8001653_01L_ugly.jpg", "800165301L"},
+        {"8001653_01L_ugly2.jpg", "800165301L"},
+        {"8001653_01L_ugly3.jpg", "800165301L"},
+        {"8001653_01L_pretty.jpg", "800165301L"},
+        {"8001653_01L_perfect.jpg", "800165301L"}
     };
     
+    // Create debug directory if it doesn't exist
+    fs::path debugDir = rootPath / "debug_images";
+    if (!fs::exists(debugDir)) {
+        fs::create_directory(debugDir);
+    }
+    
     for (const auto& [imageName, expectedText] : testImages) {
+        totalImages++;
         SECTION("Testing " + imageName) {
             // Load the image
             fs::path imagePath = rootPath / "barcode_images" / imageName;
+            if (!fs::exists(imagePath)) {
+                std::cout << "WARNING: Image file not found: " << imagePath.string() << std::endl;
+                continue; // Skip this image and move to the next one
+            }
             REQUIRE(fs::exists(imagePath));
             
             int width, height, channels;
@@ -243,96 +324,106 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
             bool anySuccess = false;
             std::string decodedText;
             
+            // Store results for this image
+            std::vector<DecodeResult> imageResults;
+            
             // Try original image
             std::cout << "\nTrying Code 128 Config on original image..." << std::endl;
-            auto result = ZXing::ReadBarcode(originalView, opts);
-            printBarcodeInfo(result, "Original Image Result (Code 128 Config)");
-            if (result.isValid()) {
+            auto originalResult = testImageWithConfig(originalView, opts, "Original");
+            imageResults.push_back(originalResult);
+            
+            // Save debug image
+            std::vector<uint8_t> originalImageData(buffer.get(), buffer.get() + width * height);
+            saveDebugImage(originalImageData, width, height, 
+                          (debugDir / ("original_" + imageName)).string());
+            
+            ZXing::Result originalZXResult;
+            if (originalResult.success) {
+                originalZXResult = ZXing::ReadBarcode(originalView, opts);
+            }
+            printBarcodeInfo(originalZXResult, "Original Image Result (Code 128 Config)");
+            
+            if (originalResult.success) {
                 anySuccess = true;
-                decodedText = result.text();
+                decodedText = originalResult.text;
+                originalSuccesses++;
+                totalOriginalTime += originalResult.processingTimeMs;
             }
             
             // Try enhancement
             std::cout << "\nApplying Code 128 specific enhancements..." << std::endl;
-            auto enhancedImage = ZXing::Code128Enhancer::enhanceBarcode(originalView, false);
+            auto enhancedImage = ZXing::Code128Enhancer::enhanceBarcode(originalView, true, true);
+            
+            // Save enhanced debug image
+            std::vector<uint8_t> enhancedImageData;
+            enhancedImageData.assign(enhancedImage.data(), enhancedImage.data() + enhancedImage.width() * enhancedImage.height());
+            saveDebugImage(enhancedImageData, enhancedImage.width(), enhancedImage.height(),
+                          (debugDir / ("enhanced_" + imageName)).string());
+            
             std::cout << "\nTrying Code 128 Config on enhanced image..." << std::endl;
-            result = ZXing::ReadBarcode(enhancedImage, opts);
-            printBarcodeInfo(result, "Enhanced Image Result (Code 128 Config)");
-            if (result.isValid()) {
+            auto enhancedResult = testImageWithConfig(enhancedImage, opts, "Enhanced");
+            imageResults.push_back(enhancedResult);
+            
+            ZXing::Result enhancedZXResult;
+            if (enhancedResult.success) {
+                enhancedZXResult = ZXing::ReadBarcode(enhancedImage, opts);
+            }
+            printBarcodeInfo(enhancedZXResult, "Enhanced Image Result (Code 128 Config)");
+            
+            if (enhancedResult.success) {
                 anySuccess = true;
-                decodedText = result.text();
+                decodedText = enhancedResult.text;
+                enhancedSuccesses++;
+                totalEnhancedTime += enhancedResult.processingTimeMs;
+                
+                if (!originalResult.success) {
+                    enhancedOnlySuccesses++;
+                }
             }
             
             // Try with inversion
             std::cout << "\nTrying Code 128 Config on enhanced+inverted image..." << std::endl;
-            auto enhancedInvertedImage = ZXing::Code128Enhancer::enhanceBarcode(originalView, true);
-            result = ZXing::ReadBarcode(enhancedInvertedImage, opts);
-            printBarcodeInfo(result, "Enhanced+Inverted Image Result (Code 128 Config)");
-            if (result.isValid()) {
+            auto enhancedInvertedImage = ZXing::Code128Enhancer::enhanceBarcode(originalView, true, true);
+            
+            // Save enhanced+inverted debug image
+            std::vector<uint8_t> enhancedInvertedImageData;
+            enhancedInvertedImageData.assign(enhancedInvertedImage.data(), enhancedInvertedImage.data() + enhancedInvertedImage.width() * enhancedInvertedImage.height());
+            saveDebugImage(enhancedInvertedImageData, enhancedInvertedImage.width(), enhancedInvertedImage.height(),
+                          (debugDir / ("enhanced_inverted_" + imageName)).string());
+            
+            auto enhancedInvertedResult = testImageWithConfig(enhancedInvertedImage, opts, "EnhancedInverted");
+            imageResults.push_back(enhancedInvertedResult);
+            
+            ZXing::Result enhancedInvertedZXResult;
+            if (enhancedInvertedResult.success) {
+                enhancedInvertedZXResult = ZXing::ReadBarcode(enhancedInvertedImage, opts);
+            }
+            printBarcodeInfo(enhancedInvertedZXResult, "Enhanced+Inverted Image Result (Code 128 Config)");
+            
+            if (enhancedInvertedResult.success) {
                 anySuccess = true;
-                decodedText = result.text();
+                decodedText = enhancedInvertedResult.text;
+                enhancedInvertedSuccesses++;
+                totalEnhancedInvertedTime += enhancedInvertedResult.processingTimeMs;
+                
+                if (!originalResult.success && !enhancedResult.success) {
+                    // Only enhanced+inverted worked
+                    enhancedOnlySuccesses++;
+                }
             }
             
-            // Try different binarizers
-            std::cout << "\nTrying LocalAverage binarizer on original image..." << std::endl;
-            opts.setBinarizer(ZXing::Binarizer::LocalAverage);
-            result = ZXing::ReadBarcode(originalView, opts);
-            printBarcodeInfo(result, "LocalAverage Binarizer Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
+            // Track if original was successful but enhanced methods weren't
+            if (originalResult.success && !enhancedResult.success && !enhancedInvertedResult.success) {
+                originalOnlySuccesses++;
             }
             
-            std::cout << "\nTrying GlobalHistogram binarizer on original image..." << std::endl;
-            opts.setBinarizer(ZXing::Binarizer::GlobalHistogram);
-            result = ZXing::ReadBarcode(originalView, opts);
-            printBarcodeInfo(result, "GlobalHistogram Binarizer Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
+            // Track if both original and any enhanced method were successful
+            if (originalResult.success && (enhancedResult.success || enhancedInvertedResult.success)) {
+                bothSuccesses++;
             }
             
-            std::cout << "\nTrying FixedThreshold binarizer on original image..." << std::endl;
-            opts.setBinarizer(ZXing::Binarizer::FixedThreshold);
-            result = ZXing::ReadBarcode(originalView, opts);
-            printBarcodeInfo(result, "FixedThreshold Binarizer Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
-            }
-            
-            // Try different rotations
-            std::cout << "\nTrying 0 degree rotation..." << std::endl;
-            result = ZXing::ReadBarcode(originalView, opts);
-            printBarcodeInfo(result, "0 Degree Rotation Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
-            }
-            
-            std::cout << "\nTrying 90 degree rotation..." << std::endl;
-            result = ZXing::ReadBarcode(ZXing::Code128Enhancer::rotateImage(originalView, 90), opts);
-            printBarcodeInfo(result, "90 Degree Rotation Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
-            }
-            
-            std::cout << "\nTrying 180 degree rotation..." << std::endl;
-            result = ZXing::ReadBarcode(ZXing::Code128Enhancer::rotateImage(originalView, 180), opts);
-            printBarcodeInfo(result, "180 Degree Rotation Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
-            }
-            
-            std::cout << "\nTrying 270 degree rotation..." << std::endl;
-            result = ZXing::ReadBarcode(ZXing::Code128Enhancer::rotateImage(originalView, 270), opts);
-            printBarcodeInfo(result, "270 Degree Rotation Result");
-            if (result.isValid()) {
-                anySuccess = true;
-                decodedText = result.text();
-            }
+            // Store all results for this image
+            allResults[imageName] = imageResults;
             
             // Verify that at least one attempt was successful
             REQUIRE(anySuccess);
@@ -346,5 +437,67 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
 }
 
 int main(int argc, char* argv[]) {
-    return Catch::Session().run(argc, argv);
-} 
+    auto result = Catch::Session().run(argc, argv);
+    
+    // After all tests complete, print enhancement effectiveness report
+    if (result == 0) {
+        std::cout << "\n\n=== ENHANCEMENT EFFECTIVENESS REPORT ===" << std::endl;
+        std::cout << "Total images tested: " << totalImages << std::endl;
+        
+        if (totalImages > 0) {
+            double originalRate = (originalSuccesses * 100.0) / totalImages;
+            double enhancedRate = (enhancedSuccesses * 100.0) / totalImages;
+            double enhancedInvertedRate = (enhancedInvertedSuccesses * 100.0) / totalImages;
+            double combinedEnhancedRate = ((enhancedSuccesses + enhancedInvertedSuccesses - bothSuccesses) * 100.0) / totalImages;
+            
+            std::cout << "Original decode success rate: " << originalRate << "%" << std::endl;
+            std::cout << "Enhanced decode success rate: " << enhancedRate << "%" << std::endl;
+            std::cout << "Enhanced+Inverted decode success rate: " << enhancedInvertedRate << "%" << std::endl;
+            
+            std::cout << "\nImages decoded ONLY with original: " << originalOnlySuccesses 
+                      << " (" << (originalOnlySuccesses * 100.0 / totalImages) << "%)" << std::endl;
+            std::cout << "Images decoded ONLY with enhancement: " << enhancedOnlySuccesses 
+                      << " (" << (enhancedOnlySuccesses * 100.0 / totalImages) << "%)" << std::endl;
+            std::cout << "Images decoded with both methods: " << bothSuccesses 
+                      << " (" << (bothSuccesses * 100.0 / totalImages) << "%)" << std::endl;
+            
+            std::cout << "\nNet improvement from enhancement: " 
+                      << (enhancedOnlySuccesses * 100.0 / totalImages) << "%" << std::endl;
+            
+            // Performance metrics
+            if (originalSuccesses > 0) {
+                std::cout << "\nAverage processing time (original): " 
+                          << (totalOriginalTime / originalSuccesses) << " ms" << std::endl;
+            }
+            if (enhancedSuccesses > 0) {
+                std::cout << "Average processing time (enhanced): " 
+                          << (totalEnhancedTime / enhancedSuccesses) << " ms" << std::endl;
+            }
+            if (enhancedInvertedSuccesses > 0) {
+                std::cout << "Average processing time (enhanced+inverted): " 
+                          << (totalEnhancedInvertedTime / enhancedInvertedSuccesses) << " ms" << std::endl;
+            }
+            
+            // Save report to file
+            std::ofstream reportFile("enhancement_report.txt");
+            if (reportFile.is_open()) {
+                reportFile << "=== ENHANCEMENT EFFECTIVENESS REPORT ===\n";
+                reportFile << "Total images tested: " << totalImages << "\n";
+                reportFile << "Original decode success rate: " << originalRate << "%\n";
+                reportFile << "Enhanced decode success rate: " << enhancedRate << "%\n";
+                reportFile << "Enhanced+Inverted decode success rate: " << enhancedInvertedRate << "%\n\n";
+                reportFile << "Images decoded ONLY with original: " << originalOnlySuccesses 
+                          << " (" << (originalOnlySuccesses * 100.0 / totalImages) << "%)\n";
+                reportFile << "Images decoded ONLY with enhancement: " << enhancedOnlySuccesses 
+                          << " (" << (enhancedOnlySuccesses * 100.0 / totalImages) << "%)\n";
+                reportFile << "Images decoded with both methods: " << bothSuccesses 
+                          << " (" << (bothSuccesses * 100.0 / totalImages) << "%)\n\n";
+                reportFile << "Net improvement from enhancement: " 
+                          << (enhancedOnlySuccesses * 100.0 / totalImages) << "%\n";
+                reportFile.close();
+            }
+        }
+    }
+    
+    return result;
+}

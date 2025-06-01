@@ -173,6 +173,56 @@ void Code128Enhancer::adaptiveThreshold(std::vector<uint8_t>& image, int width, 
     image = std::move(result);
 }
 
+void Code128Enhancer::applyDirectionalFilter(std::vector<uint8_t>& image, int width, int height, int kernelSize) {
+    if (image.empty() || width <= 0 || height <= 0) return;
+    
+    // Create a copy of the original image
+    std::vector<uint8_t> result = image;
+    
+    // Ensure kernel size is odd
+    kernelSize = (kernelSize % 2 == 0) ? kernelSize + 1 : kernelSize;
+    int halfKernel = kernelSize / 2;
+    
+    // Create a horizontal Sobel-like kernel for Code 128 barcode enhancement
+    // This kernel will enhance vertical edges (horizontal transitions) which are
+    // characteristic of Code 128 barcodes
+    std::vector<float> horizontalKernel(kernelSize);
+    
+    // Generate a directional kernel that emphasizes horizontal patterns
+    for (int i = 0; i < kernelSize; i++) {
+        // Create a kernel that enhances horizontal patterns
+        // Center of the kernel has highest weight, edges have negative weights
+        float x = static_cast<float>(i - halfKernel) / halfKernel;
+        horizontalKernel[i] = -x * std::exp(-x * x * 2);
+    }
+    
+    // Apply the directional filter
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float sum = 0.0f;
+            float kernelSum = 0.0f;
+            
+            // Apply horizontal kernel
+            for (int i = -halfKernel; i <= halfKernel; i++) {
+                int nx = x + i;
+                if (nx >= 0 && nx < width) {
+                    float kernelValue = horizontalKernel[i + halfKernel];
+                    sum += image[y * width + nx] * kernelValue;
+                    kernelSum += std::abs(kernelValue);
+                }
+            }
+            
+            // Normalize and adjust the result
+            // Scale to 0-255 range and enhance contrast
+            int filteredValue = static_cast<int>(128 + (sum / kernelSum) * 1.5f);
+            result[y * width + x] = static_cast<uint8_t>(std::clamp(filteredValue, 0, 255));
+        }
+    }
+    
+    // Copy result back to input image
+    image = std::move(result);
+}
+
 ImageView Code128Enhancer::toImageView(const std::vector<uint8_t>& image, int width, int height) {
     // Create a copy of the image data that will be owned by the ImageView
     uint8_t* data = new uint8_t[width * height];
@@ -251,7 +301,7 @@ ImageView Code128Enhancer::cropImage(const ImageView& input, int x, int y, int w
     return ImageView(outputBuffer.release(), width, height, ImageFormat::Lum);
 }
 
-ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInvert) {
+ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInvert, bool isTest) {
     // Validate input
     if (!input.data() || input.width() <= 0 || input.height() <= 0) {
         std::cout << "Invalid input image" << std::endl;
@@ -267,11 +317,13 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     opts.setFormats(BarcodeFormat::Code128);
     opts.setMinLineCount(2);
 
-    auto result = ReadBarcode(input, opts);
-    if (result.isValid()) {
-        std::cout << "Original image is decodable, returning as is" << std::endl;
-        return input;
-    }
+/*     if(isTest == false){
+        auto result = ReadBarcode(input, opts);
+        if (result.isValid()) {
+            std::cout << "Original image is decodable with Code128 settings, returning as is" << std::endl;
+            return input;
+        }
+    } */
 
     // Convert to grayscale and keep data alive
     std::vector<uint8_t> image = convertToGrayscale(input);
@@ -283,7 +335,7 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     const int maxModuleWidth = 8;  // Maximum width of a module in pixels
     const int quietZoneWidth = 10;  // Quiet zone should be 10x module width
     const double minContrast = 0.2;  // More permissive minimum contrast
-    const int verticalRedundancy = static_cast<int>(height * 0.1);  // Use 10% of height for averaging
+    const int verticalRedundancy = static_cast<int>(height * 0.05);  // Use 5% of height for averaging
 
     std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
     std::cout << "- Min module width: " << minModuleWidth << std::endl;
@@ -305,9 +357,12 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
             verticalAveraged[y * width + x] = static_cast<uint8_t>(sum / (endY - startY + 1));
         }
     }
+    
+    // Apply directional filtering to enhance horizontal patterns (Code 128 specific)
+    applyDirectionalFilter(verticalAveraged, width, height, maxModuleWidth);
 
     // Apply adaptive thresholding with Code 128 specific parameters
-    int blockSize = std::max(minModuleWidth * 8, 15);  // Block size based on module width
+    int blockSize = std::max(minModuleWidth * 4, 11);  // Block size based on module width
     float C = 5.0f;  // Threshold adjustment
     adaptiveThreshold(verticalAveraged, width, height, blockSize, C);
 
@@ -316,27 +371,29 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     std::memcpy(thresholdBuffer.get(), verticalAveraged.data(), width * height);
     ImageView thresholdView(thresholdBuffer.get(), width, height, ImageFormat::Lum);
 
-    // cheating to have valid unit test
-//     if(shouldInvert)
-    {
-        result = ReadBarcode(thresholdView, opts);
-        if (result.isValid()) {
-            std::cout << "Thresholded image is decodable, returning it" << std::endl;
-            return thresholdView;
-        }
-    }
+    // no need to enhance image if original is decodable
+    // If we are in test mode, we still want to apply enhancement to assess if it helps
+    // if(isTest == false){
+    //     result = ReadBarcode(thresholdView, opts);
+    //     if (result.isValid()) {
+    //         std::cout << "Thresholded image is decodable, returning it" << std::endl;
+    //         return thresholdView;
+    //     }
+    // }
 
-    // If we get here, try with inversion if requested
+    // If we get here, try with inversion if requested (only when necessary)
     if (shouldInvert) {
+        // In-place inversion to avoid extra memory allocation
         for (int i = 0; i < width * height; i++) {
             verticalAveraged[i] = 255 - verticalAveraged[i];
         }
 
+        // Reuse the same buffer for the inverted view
         std::unique_ptr<uint8_t[]> invertedBuffer(new uint8_t[width * height]);
         std::memcpy(invertedBuffer.get(), verticalAveraged.data(), width * height);
         ImageView invertedView(invertedBuffer.get(), width, height, ImageFormat::Lum);
 
-        result = ReadBarcode(invertedView, opts);
+        auto result = ReadBarcode(invertedView, opts);
         if (result.isValid()) {
             std::cout << "Inverted image is decodable, returning it" << std::endl;
             return invertedView;

@@ -32,3 +32,5 @@ build/
 ios/Classes/src/
 macos/Classes/src/
 /barcode_images
+/build_new
+/fresh_build
