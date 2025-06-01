@@ -232,10 +232,23 @@ CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
         Result result;
         int duration;
 
-        // Always try enhanced image first
-        platform_log("Attempting barcode detection with enhancement\n");
-        ImageView enhancedImage = BarcodeEnhancer::enhance1DBarcode(image);
-        result = ReadBarcode(enhancedImage, hints);
+        // Always try Code 128 optimized detection first
+        platform_log("Attempting barcode detection with Code 128 optimization\n");
+        
+        // Create Code 128 specific options
+        ReaderOptions code128Opts;
+        code128Opts.setTryHarder(true);
+        code128Opts.setTryRotate(true);
+        code128Opts.setIsPure(false);  // The image might contain other elements
+        code128Opts.setBinarizer(Binarizer::LocalAverage);
+        code128Opts.setFormats(BarcodeFormat::Code128);  // Only look for Code 128
+        code128Opts.setMinLineCount(2);  // Require at least 2 scan lines to match
+        code128Opts.setTryInvert(true);  // Try both regular and inverted images
+        code128Opts.setTryDownscale(true);  // Try downscaling for better detection
+        
+        // Use the enhanced image with Code 128 specific options
+        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false);
+        result = ReadBarcode(enhancedImage, code128Opts);
         
         // If no barcode found, fall back to original image
         if (!result.isValid()) {
@@ -266,10 +279,23 @@ CodeResults _readBarcodes(const DecodeBarcodeParams& params) noexcept
         
         Results results;
         
-        // Always try enhanced image first
-        platform_log("Attempting barcode detection with enhancement\n");
-        ImageView enhancedImage = BarcodeEnhancer::enhance1DBarcode(image);
-        results = ReadBarcodes(enhancedImage, hints);
+        // Always try Code 128 optimized detection first
+        platform_log("Attempting barcode detection with Code 128 optimization\n");
+        
+        // Create Code 128 specific options
+        ReaderOptions code128Opts;
+        code128Opts.setTryHarder(true);
+        code128Opts.setTryRotate(true);
+        code128Opts.setIsPure(false);  // The image might contain other elements
+        code128Opts.setBinarizer(Binarizer::LocalAverage);
+        code128Opts.setFormats(BarcodeFormat::Code128);  // Only look for Code 128
+        code128Opts.setMinLineCount(2);  // Require at least 2 scan lines to match
+        code128Opts.setTryInvert(true);  // Try both regular and inverted images
+        code128Opts.setTryDownscale(true);  // Try downscaling for better detection
+        
+        // Use the enhanced image with Code 128 specific options
+        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false);
+        results = ReadBarcodes(enhancedImage, code128Opts);
         
         // If no barcodes found, fall back to original image
         if (results.empty()) {

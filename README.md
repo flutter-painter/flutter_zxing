@@ -1,5 +1,12 @@
 # Flutter ZXing
 
+
+## BUILDME
+cd src; git submodule update --init --recursive
+
+By setting ZXING_READERS to ON in the CMake configuration, we ensure that the actual implementation of the barcode reading functionality is compiled instead of the error-throwing stub.
+
+
 ## test C++ Zxing
 cd build ; cmake .. ; cmake --build . ; 
 .\\Debug\\barcode_tests.exe

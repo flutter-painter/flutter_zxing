@@ -14,6 +14,8 @@ add_library(
     barcode_enhancer.cpp
 )
 
+# Enable both readers and writers in ZXing
+set(ZXING_READERS ON)
 set(ZXING_WRITERS ON)
 
 add_subdirectory(zxing/core EXCLUDE_FROM_ALL)

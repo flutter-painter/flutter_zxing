@@ -71,17 +71,17 @@ std::tuple<std::vector<uint8_t>, int, int> loadImage(const fs::path& filepath) {
         FAIL("Image loading failed");
     }
     
-    INFO("Image loaded successfully:");
-    INFO("  Width: " << width);
-    INFO("  Height: " << height);
-    INFO("  Original channels: " << channels);
+    //INFO("Image loaded successfully:");
+    //INFO("  Width: " << width);
+    //INFO("  Height: " << height);
+    //INFO("  Original channels: " << channels);
     
     REQUIRE(width > 0);
     REQUIRE(height > 0);
     REQUIRE(data != nullptr);
     
     std::vector<uint8_t> gray_data(data, data + width * height);
-    INFO("  Gray data size: " << gray_data.size());
+    //INFO("  Gray data size: " << gray_data.size());
     
     // Print first few bytes of image data
     std::cout << "\nImage data preview for: " << filepath.filename().string() << std::endl;
@@ -196,17 +196,24 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
         rootPath = rootPath.parent_path();
     }
     
-    INFO("Test images path: " << rootPath / "barcode_images");
-    INFO("Current working directory: " << currentPath);
-    INFO("Root path: " << rootPath);
+    //INFO("Test images path: " << rootPath / "barcode_images");
+    //INFO("Current working directory: " << currentPath);
+    //INFO("Root path: " << rootPath);
     
     REQUIRE(fs::exists(rootPath / "barcode_images"));
     
-    // Focus on the three zoomed images with their actual expected text values
+    // Focus on images with their actual expected text values
     std::vector<std::pair<std::string, std::string>> testImages = {
+        {"257670HA64SM.jpg", "257670HA64SM"},
         {"257670HA64SM_zoom.jpg", "257670HA64SM"},
         {"800165E_01L_zoom.jpg", "800165E01L"},
-        {"800446E_01XL_zoom.jpg", "800446E01XL"}
+        {"800446E_01XL.jpg", "800446E01XL"},
+        {"800446E_01XL_zoom.jpg", "800446E01XL"},
+        {"800446E_01XL_ugly.jpg", "800446E01XL"},
+        {"800446E_01XL_ugly2.jpg", "800446E01XL"},
+        {"800446E_01XL_ugly3.jpg", "800446E01XL"},
+        {"800446E_01XL_pretty.jpg", "800446E01XL"},
+        {"800446E_01XL_perfect.jpg", "800446E01XL"}
     };
     
     for (const auto& [imageName, expectedText] : testImages) {
