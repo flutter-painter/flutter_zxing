@@ -3,6 +3,10 @@
 Discussion on Enhancement #5: Luminance Pyramid Approach
 ?
 
+Pattern-based validation (to catch and correct errors early)
+Smart region selection (to improve performance and accuracy)
+Adaptive parameter tuning (to handle varying image qualities)
+
 ## BUILDME
 cd src; git submodule update --init --recursive
 
@@ -68,6 +72,7 @@ Flutter ZXing is a high-performance Flutter plugin for scanning and generating Q
 ## Table of Contents
 
 - [Flutter ZXing](#flutter-zxing)
+  - [BUILDME](#buildme)
   - [test C++ Zxing](#test-c-zxing)
   - [Table of Contents](#table-of-contents)
   - [Demo Screenshots](#demo-screenshots)
