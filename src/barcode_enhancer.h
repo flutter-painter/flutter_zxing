@@ -19,10 +19,14 @@ class Code128Enhancer {
 public:
     // Main enhancement function - currently used in production
     static ImageView enhanceBarcode(const ImageView& input, bool shouldInvert = false, bool isTest = false);
+    
+    // Multi-scale enhancement for Code 128 barcodes
+    static ImageView enhanceBarcodeMultiScale(const ImageView& input, bool shouldInvert = false);
 
     // Image manipulation helpers - currently used in production
     static ImageView rotateImage(const ImageView& input, int degrees);
     static ImageView cropImage(const ImageView& input, int x, int y, int width, int height);
+    static ImageView scaleImage(const ImageView& input, float scaleFactor);
 
 private:
     // Core enhancement steps - currently used in production
@@ -39,7 +43,7 @@ private:
     // Gaussian blur - Not used: Added complexity without improving decode rate
     static void gaussianBlur(std::vector<uint8_t>& image, int width, int height, float sigma);
 
-    // Bar width correction - Not used: Sometimes interfered with ZXing's built-in bar detection
+    // Bar width correction - Optimized for Code 128 barcodes
     static void correctBarWidths(std::vector<uint8_t>& image, int width, int height);
 
     // Quiet zone validation - Not used: ZXing handles quiet zones well enough internally

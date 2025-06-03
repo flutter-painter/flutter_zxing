@@ -23,7 +23,7 @@
 #include "BitMatrix.h"
 #include "Version.h"
 #include "barcode_enhancer.h"
-#include "barcode_format.h"
+#include "EnhancedBarcodeReader.h"
 
 #include <algorithm>
 #include <chrono>
@@ -246,9 +246,8 @@ CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
         code128Opts.setTryInvert(true);  // Try both regular and inverted images
         code128Opts.setTryDownscale(true);  // Try downscaling for better detection
         
-        // Use the enhanced image with Code 128 specific options
-        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false, false);
-        result = ReadBarcode(enhancedImage, code128Opts);
+        // Use the enhanced barcode reader with Code 128 specific options
+        result = ReadEnhancedBarcode(image, code128Opts);
         
         // If no barcode found, fall back to original image
         if (!result.isValid()) {
@@ -293,9 +292,11 @@ CodeResults _readBarcodes(const DecodeBarcodeParams& params) noexcept
         code128Opts.setTryInvert(true);  // Try both regular and inverted images
         code128Opts.setTryDownscale(true);  // Try downscaling for better detection
         
-        // Use the enhanced image with Code 128 specific options
-        ImageView enhancedImage = Code128Enhancer::enhanceBarcode(image, false, false);
-        results = ReadBarcodes(enhancedImage, code128Opts);
+        // Use the enhanced barcode reader with Code 128 specific options
+        // For multiple barcodes, we'll still use ReadBarcodes but with our enhanced bitmap creation
+        auto bitmap = CreateEnhancedBitmap(code128Opts.binarizer(), image, BarcodeFormat::Code128);
+        MultiFormatReader reader(code128Opts);
+        results = reader.read(*bitmap);
         
         // If no barcodes found, fall back to original image
         if (results.empty()) {

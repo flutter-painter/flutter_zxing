@@ -183,20 +183,19 @@ void Code128Enhancer::applyDirectionalFilter(std::vector<uint8_t>& image, int wi
     kernelSize = (kernelSize % 2 == 0) ? kernelSize + 1 : kernelSize;
     int halfKernel = kernelSize / 2;
     
-    // Create a horizontal Sobel-like kernel for Code 128 barcode enhancement
-    // This kernel will enhance vertical edges (horizontal transitions) which are
-    // characteristic of Code 128 barcodes
+    // Create a specialized kernel for Code 128 barcode enhancement
+    // Code 128 has specific bar width patterns (1:2:3:4 module widths)
     std::vector<float> horizontalKernel(kernelSize);
     
-    // Generate a directional kernel that emphasizes horizontal patterns
+    // Generate a directional kernel that emphasizes Code 128 bar patterns
     for (int i = 0; i < kernelSize; i++) {
-        // Create a kernel that enhances horizontal patterns
-        // Center of the kernel has highest weight, edges have negative weights
         float x = static_cast<float>(i - halfKernel) / halfKernel;
-        horizontalKernel[i] = -x * std::exp(-x * x * 2);
+        // Sharper transition kernel for better edge detection in Code 128
+        // The exponent is reduced from 2 to 1.5 to create sharper transitions
+        horizontalKernel[i] = -x * std::exp(-x * x * 1.5);
     }
     
-    // Apply the directional filter
+    // Apply the directional filter with Code 128 specific enhancements
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float sum = 0.0f;
@@ -212,10 +211,33 @@ void Code128Enhancer::applyDirectionalFilter(std::vector<uint8_t>& image, int wi
                 }
             }
             
-            // Normalize and adjust the result
-            // Scale to 0-255 range and enhance contrast
-            int filteredValue = static_cast<int>(128 + (sum / kernelSum) * 1.5f);
+            // Normalize and adjust the result with stronger contrast for Code 128
+            // Increase contrast factor from 1.5 to 2.0 for better bar/space differentiation
+            int filteredValue = static_cast<int>(128 + (sum / kernelSum) * 2.0f);
             result[y * width + x] = static_cast<uint8_t>(std::clamp(filteredValue, 0, 255));
+        }
+    }
+    
+    // Apply a second pass to enhance bar edges specifically for Code 128
+    // This helps with detecting the precise edges of bars which is critical for Code 128
+    for (int y = 0; y < height; y++) {
+        for (int x = 1; x < width - 1; x++) {
+            // Detect edges (transitions between bars and spaces)
+            int left = result[y * width + (x-1)];
+            int center = result[y * width + x];
+            int right = result[y * width + (x+1)];
+            
+            // If this is an edge (significant difference between neighbors)
+            if ((std::abs(left - center) > 30) || (std::abs(right - center) > 30)) {
+                // Enhance the edge by making it more distinct
+                if (center < 128) {
+                    // Dark bar - make it darker
+                    result[y * width + x] = 0;
+                } else {
+                    // Light space - make it lighter
+                    result[y * width + x] = 255;
+                }
+            }
         }
     }
     
@@ -317,32 +339,31 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     opts.setFormats(BarcodeFormat::Code128);
     opts.setMinLineCount(2);
 
-/*     if(isTest == false){
-        auto result = ReadBarcode(input, opts);
-        if (result.isValid()) {
-            std::cout << "Original image is decodable with Code128 settings, returning as is" << std::endl;
-            return input;
-        }
-    } */
+    // Try decoding the oriented image first
+    auto result = ReadBarcode(input, opts);
+    if (result.isValid()) {
+        std::cout << "Oriented image decoded successfully" << std::endl;
+        return input;
+    }
 
     // Convert to grayscale and keep data alive
     std::vector<uint8_t> image = convertToGrayscale(input);
     int width = input.width();
     int height = input.height();
 
-    // Code 128 specific parameters
-    const int minModuleWidth = 1;  // More permissive minimum width
-    const int maxModuleWidth = 8;  // Maximum width of a module in pixels
-    const int quietZoneWidth = 10;  // Quiet zone should be 10x module width
-    const double minContrast = 0.2;  // More permissive minimum contrast
-    const int verticalRedundancy = static_cast<int>(height * 0.05);  // Use 5% of height for averaging
+    // Parameters for Code 128 enhancement - optimized based on testing
+    const int minModuleWidth = 1;  // Minimum expected width of a module in pixels
+    const int maxModuleWidth = 15;  // Increased for very low-resolution images
+    const int quietZoneWidth = 4;  // Further reduced for barcodes with minimal margins
+    const double minContrast = 0.1;  // Very permissive for poor contrast images
+    const int verticalRedundancy = static_cast<int>(height * 0.2);  // Increased to 20% for maximum noise reduction
 
-    std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
-    std::cout << "- Min module width: " << minModuleWidth << std::endl;
-    std::cout << "- Max module width: " << maxModuleWidth << std::endl;
-    std::cout << "- Quiet zone width: " << quietZoneWidth << std::endl;
-    std::cout << "- Min contrast: " << minContrast << std::endl;
-    std::cout << "- Vertical redundancy: " << verticalRedundancy << std::endl;
+    // std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
+    // std::cout << "- Min module width: " << minModuleWidth << std::endl;
+    // std::cout << "- Max module width: " << maxModuleWidth << std::endl;
+    // std::cout << "- Quiet zone width: " << quietZoneWidth << std::endl;
+    // std::cout << "- Min contrast: " << minContrast << std::endl;
+    // std::cout << "- Vertical redundancy: " << verticalRedundancy << std::endl;
 
     // Apply vertical averaging to reduce noise
     std::vector<uint8_t> verticalAveraged(width * height);
@@ -365,6 +386,9 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     int blockSize = std::max(minModuleWidth * 4, 11);  // Block size based on module width
     float C = 5.0f;  // Threshold adjustment
     adaptiveThreshold(verticalAveraged, width, height, blockSize, C);
+    
+    // Apply bar width correction specifically for Code 128
+    correctBarWidths(verticalAveraged, width, height);
 
     // Try decoding after thresholding
     std::unique_ptr<uint8_t[]> thresholdBuffer(new uint8_t[width * height]);
@@ -403,6 +427,220 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     // If nothing worked, return the original image
     std::cout << "No enhancement was successful, returning original image" << std::endl;
     return input;
+}
+
+ImageView Code128Enhancer::scaleImage(const ImageView& input, float scaleFactor) {
+    if (scaleFactor <= 0 || !input.data()) {
+        return input;
+    }
+    
+    int originalWidth = input.width();
+    int originalHeight = input.height();
+    int newWidth = static_cast<int>(originalWidth * scaleFactor);
+    int newHeight = static_cast<int>(originalHeight * scaleFactor);
+    
+    if (newWidth <= 0 || newHeight <= 0) {
+        return input;
+    }
+    
+    // Create output buffer
+    std::unique_ptr<uint8_t[]> outputBuffer = std::make_unique<uint8_t[]>(newWidth * newHeight);
+    
+    // Use bilinear interpolation for scaling
+    for (int y = 0; y < newHeight; y++) {
+        float originalY = y / scaleFactor;
+        int y1 = static_cast<int>(originalY);
+        int y2 = std::min(y1 + 1, originalHeight - 1);
+        float yFraction = originalY - y1;
+        
+        for (int x = 0; x < newWidth; x++) {
+            float originalX = x / scaleFactor;
+            int x1 = static_cast<int>(originalX);
+            int x2 = std::min(x1 + 1, originalWidth - 1);
+            float xFraction = originalX - x1;
+            
+            // Bilinear interpolation
+            float p1 = input.data()[y1 * originalWidth + x1];
+            float p2 = input.data()[y1 * originalWidth + x2];
+            float p3 = input.data()[y2 * originalWidth + x1];
+            float p4 = input.data()[y2 * originalWidth + x2];
+            
+            float top = p1 * (1 - xFraction) + p2 * xFraction;
+            float bottom = p3 * (1 - xFraction) + p4 * xFraction;
+            float pixel = top * (1 - yFraction) + bottom * yFraction;
+            
+            outputBuffer[y * newWidth + x] = static_cast<uint8_t>(std::clamp(pixel, 0.0f, 255.0f));
+        }
+    }
+    
+    return ImageView(outputBuffer.release(), newWidth, newHeight, ImageFormat::Lum);
+}
+
+void Code128Enhancer::correctBarWidths(std::vector<uint8_t>& image, int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    
+    // More aggressive bar width correction parameters for Code 128
+    // Code 128 has specific module width ratios (1:2:3:4)
+    // This array represents the expected relative widths of modules in Code 128
+    const int moduleWidths[] = {1, 2, 3, 4};
+    
+    // Create a copy of the original image
+    std::vector<uint8_t> result = image;
+    
+    // Sample multiple scan lines across the height of the image
+    // This improves robustness against noise and distortion
+    const int numScanLines = std::min(10, height / 2);
+    const int scanLineStep = height / (numScanLines + 1);
+    
+    for (int scanLine = 0; scanLine < numScanLines; scanLine++) {
+        int y = (scanLine + 1) * scanLineStep;
+        if (y >= height) continue;
+        
+        // Find transitions between bars and spaces
+        std::vector<int> transitions;
+        std::vector<int> barWidths;
+        
+        // Start with a threshold-based approach to find transitions
+        uint8_t lastPixel = image[y * width];
+        bool isBar = (lastPixel < 128);
+        int currentWidth = 1;
+        
+        // Scan the line to find transitions and measure bar/space widths
+        for (int x = 1; x < width; x++) {
+            uint8_t pixel = image[y * width + x];
+            bool currentIsBar = (pixel < 128);
+            
+            if (currentIsBar != isBar) {
+                // Transition detected
+                transitions.push_back(x);
+                barWidths.push_back(currentWidth);
+                isBar = currentIsBar;
+                currentWidth = 1;
+            } else {
+                currentWidth++;
+            }
+        }
+        
+        // Add the last segment if needed
+        if (currentWidth > 0) {
+            barWidths.push_back(currentWidth);
+        }
+        
+        // Need at least 25 bars for a valid Code 128 barcode
+        // (start/stop patterns + data + check digit)
+        // Reduced from 30 to be more permissive with partial barcodes
+        if (barWidths.size() < 25) continue;
+        
+        // Find the minimum bar width (X dimension)
+        int minBarWidth = *std::min_element(barWidths.begin(), barWidths.end());
+        if (minBarWidth <= 0) continue;
+        
+        // Calculate expected module widths based on the X dimension
+        std::vector<int> expectedWidths(4);
+        for (int i = 0; i < 4; i++) {
+            expectedWidths[i] = moduleWidths[i] * minBarWidth;
+        }
+        
+        // Correct bar widths to match expected module widths
+        for (size_t i = 0; i < barWidths.size(); i++) {
+            int measuredWidth = barWidths[i];
+            
+            // Find the closest expected module width
+            int bestMatch = 0;
+            int minDiff = std::abs(measuredWidth - expectedWidths[0]);
+            
+            for (int j = 1; j < 4; j++) {
+                int diff = std::abs(measuredWidth - expectedWidths[j]);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestMatch = j;
+                }
+            }
+            
+            // If the difference is significant, adjust the width
+            // Using a more permissive threshold (minBarWidth / 2 instead of minBarWidth / 3)
+            // to accommodate more distorted barcodes
+            if (minDiff > minBarWidth / 2) {
+                int startX = (i > 0) ? transitions[i-1] : 0;
+                int endX = (i < transitions.size()) ? transitions[i] : width;
+                int correctedWidth = expectedWidths[bestMatch];
+                
+                // Adjust the image to match the corrected width
+                // This is a simplified approach - in practice, you might want to
+                // adjust the positions of transitions rather than stretching/shrinking
+                bool isCurrentBar = ((i % 2) == 0) ? true : false;
+                uint8_t pixelValue = isCurrentBar ? 0 : 255;
+                
+                // Apply the correction to a larger vertical strip around the scan line
+                // Increased from 5 to height/5 for more effective correction
+                int stripHeight = std::min(height / 5, height / 2);
+                int startY = std::max(0, y - stripHeight/2);
+                int endY = std::min(height, y + stripHeight/2 + 1);
+                
+                for (int cy = startY; cy < endY; cy++) {
+                    for (int cx = startX; cx < endX; cx++) {
+                        result[cy * width + cx] = pixelValue;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Copy result back to input image
+    image = std::move(result);
+}
+
+ImageView Code128Enhancer::enhanceBarcodeMultiScale(const ImageView& input, bool shouldInvert) {
+    if (!input.data() || input.width() <= 0 || input.height() <= 0) {
+        std::cout << "Invalid input image for multi-scale analysis" << std::endl;
+        return input;
+    }
+    
+    // Configure reader options specifically for Code 128
+    ReaderOptions opts;
+    opts.setTryHarder(true);
+    opts.setTryRotate(false); // We'll handle rotation separately if needed
+    opts.setIsPure(false);
+    opts.setBinarizer(Binarizer::LocalAverage);
+    opts.setFormats(BarcodeFormat::Code128);
+    opts.setMinLineCount(2);
+    
+    // Try original scale first
+    auto enhancedOriginal = enhanceBarcode(input, shouldInvert, true);
+    auto result = ReadBarcode(enhancedOriginal, opts);
+    
+    if (result.isValid()) {
+        std::cout << "Original scale enhanced image is decodable" << std::endl;
+        return enhancedOriginal;
+    }
+    
+    // Define scales to try - these are carefully chosen for Code 128 barcodes
+    // which can vary in module width but maintain specific ratios
+    const float scales[] = {0.75f, 1.25f, 1.5f, 2.0f};
+    
+    for (float scale : scales) {
+        std::cout << "Trying scale factor: " << scale << std::endl;
+        
+        // Scale the image
+        auto scaledImage = scaleImage(input, scale);
+        
+        // Enhance the scaled image
+        auto enhancedScaled = enhanceBarcode(scaledImage, shouldInvert, true);
+        
+        // Try to decode
+        result = ReadBarcode(enhancedScaled, opts);
+        
+        if (result.isValid()) {
+            std::cout << "Successfully decoded at scale factor: " << scale << std::endl;
+            return enhancedScaled;
+        }
+    }
+    
+    // If no scale worked, return the original enhanced version
+    std::cout << "No scale factor succeeded, returning original enhanced image" << std::endl;
+    return enhancedOriginal;
 }
 
 } // namespace ZXing 

@@ -12,6 +12,7 @@ add_library(
     zxcommon.cpp
     native_zxing.cpp
     barcode_enhancer.cpp
+    Code128Binarizer.cpp
 )
 
 # Enable both readers and writers in ZXing

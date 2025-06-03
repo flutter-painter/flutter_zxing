@@ -1,5 +1,7 @@
 # Flutter ZXing
 
+Discussion on Enhancement #5: Luminance Pyramid Approach
+?
 
 ## BUILDME
 cd src; git submodule update --init --recursive
