@@ -244,7 +244,11 @@ CodeResult _readBarcode(const DecodeBarcodeParams& params) noexcept
         code128Opts.setFormats(BarcodeFormat::Code128);  // Only look for Code 128
         code128Opts.setMinLineCount(2);  // Require at least 2 scan lines to match
         code128Opts.setTryInvert(true);  // Try both regular and inverted images
-        code128Opts.setTryDownscale(true);  // Try downscaling for better detection
+        
+        // Optimize pyramid parameters for Code 128
+        code128Opts.setTryDownscale(true);
+        code128Opts.setDownscaleThreshold(300);  // Start downscaling earlier for Code 128
+        code128Opts.setDownscaleFactor(2);       // Use smaller steps for more precise detection
         
         // Use the enhanced barcode reader with Code 128 specific options
         result = ReadEnhancedBarcode(image, code128Opts);
