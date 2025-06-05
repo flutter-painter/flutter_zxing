@@ -199,10 +199,12 @@ struct DecodeResult {
     double processingTimeMs;
     std::string format;
     std::string method;
+    ZXing::Result rawZxingResult; // Added to store the raw result
     
     DecodeResult(bool s = false, const std::string& t = "", double time = 0.0, 
-                const std::string& fmt = "", const std::string& mthd = "")
-        : success(s), text(t), processingTimeMs(time), format(fmt), method(mthd) {}
+                const std::string& fmt = "", const std::string& mthd = "",
+                const ZXing::Result& rawRes = ZXing::Result(ZXing::DecodeStatus::NoError)) // Added rawRes parameter
+        : success(s), text(t), processingTimeMs(time), format(fmt), method(mthd), rawZxingResult(rawRes) {}
 };
 
 // Global variables for tracking statistics
@@ -230,7 +232,7 @@ DecodeResult testImageWithConfig(const ZXing::ImageView& imageView, const ZXing:
         formatName = ZXing::ToString(result.format());
     }
     
-    return DecodeResult(result.isValid(), result.text(), duration, formatName, methodName);
+    return DecodeResult(result.isValid(), result.text(), duration, formatName, methodName, result);
 }
 
 TEST_CASE("Basic barcode decoding", "[decoding]") {
@@ -317,6 +319,16 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
             // Try original image
             // std::cout << "\nTrying Code 128 Config on original image..." << std::endl;
             auto originalResult = testImageWithConfig(originalView, originalOpts, "Original");
+            std::cout << "\n--- Image: " << imageName << ", Method: Original ---" << std::endl;
+            std::cout << "Success: " << (originalResult.success ? "Yes" : "No") << std::endl;
+            if (originalResult.success) {
+                std::cout << "Text: " << originalResult.text << std::endl;
+                std::cout << "Format: " << originalResult.format << std::endl;
+                printBarcodeInfo(originalResult.rawZxingResult, "Original Decoded Info for " + imageName);
+            } else {
+                std::cout << "Error: " << static_cast<int>(originalResult.rawZxingResult.error().type()) << " (" << ZXing::ToString(originalResult.rawZxingResult.error()) << ")" << std::endl;
+            }
+            std::cout << "Time: " << originalResult.processingTimeMs << " ms" << std::endl;
             
             // Save debug image
             std::vector<uint8_t> originalImageData(buffer.get(), buffer.get() + width * height);
@@ -336,6 +348,16 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
                           (debugDir / ("enhanced_non_inverted_" + imageName)).string());
             std::cout << "[BT_ENH] Calling testImageWithConfig for enhancedImageNonInverted. Width: " << enhancedImageNonInverted.width() << ", Height: " << enhancedImageNonInverted.height() << std::endl;
             auto enhancedResult = testImageWithConfig(enhancedImageNonInverted, enhancedOpts, "Enhanced");
+            std::cout << "\n--- Image: " << imageName << ", Method: Enhanced ---" << std::endl;
+            std::cout << "Success: " << (enhancedResult.success ? "Yes" : "No") << std::endl;
+            if (enhancedResult.success) {
+                std::cout << "Text: " << enhancedResult.text << std::endl;
+                std::cout << "Format: " << enhancedResult.format << std::endl;
+                printBarcodeInfo(enhancedResult.rawZxingResult, "Enhanced Decoded Info for " + imageName);
+            } else {
+                std::cout << "Error: " << static_cast<int>(enhancedResult.rawZxingResult.error().type()) << " (" << ZXing::ToString(enhancedResult.rawZxingResult.error()) << ")" << std::endl;
+            }
+            std::cout << "Time: " << enhancedResult.processingTimeMs << " ms" << std::endl;
             if (enhancedResult.success) enhancedSuccesses++;
             
             // // Try with basic enhancement (inverted input, local binarization)
@@ -345,6 +367,16 @@ TEST_CASE("Basic barcode decoding", "[decoding]") {
             // saveDebugImage(enhancedImageDataInverted, enhancedImageInverted.width(), enhancedImageInverted.height(),
             //               (debugDir / ("enhanced_inverted_" + imageName)).string());
             // auto enhancedInvertedResult = testImageWithConfig(enhancedImageInverted, enhancedOpts, "EnhancedInverted");
+            // std::cout << "\n--- Image: " << imageName << ", Method: EnhancedInverted ---" << std::endl;
+            // std::cout << "Success: " << (enhancedInvertedResult.success ? "Yes" : "No") << std::endl;
+            // if (enhancedInvertedResult.success) {
+            //     std::cout << "Text: " << enhancedInvertedResult.text << std::endl;
+            //     std::cout << "Format: " << enhancedInvertedResult.format << std::endl;
+            //     printBarcodeInfo(enhancedInvertedResult.rawZxingResult, "EnhancedInverted Decoded Info for " + imageName);
+            // } else {
+            //     std::cout << "Error: " << static_cast<int>(enhancedInvertedResult.rawZxingResult.error().type()) << " (" << ZXing::ToString(enhancedInvertedResult.rawZxingResult.error()) << ")" << std::endl;
+            // }
+            // std::cout << "Time: " << enhancedInvertedResult.processingTimeMs << " ms" << std::endl;
             // if (enhancedInvertedResult.success) enhancedInvertedSuccesses++;
             
             totalEnhancedTime += enhancedResult.processingTimeMs; // Only non-inverted enhanced path contributes now

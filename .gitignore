@@ -30,7 +30,7 @@ build/
 
 # Build artifacts from this project
 _deps/
-tests/
+/tests/
 
 # iOS and MacOS src folders
 ios/Classes/src/
