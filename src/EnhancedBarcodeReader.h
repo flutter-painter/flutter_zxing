@@ -3,6 +3,10 @@
 #include "zxing/core/src/ReadBarcode.h"
 #include "barcode_enhancer.h"
 #include "Code128Binarizer.h"
+#include "zxing/core/src/ReaderOptions.h" // For Binarizer enum
+#include "zxing/core/src/ThresholdBinarizer.h"
+#include "zxing/core/src/GlobalHistogramBinarizer.h"
+#include "zxing/core/src/HybridBinarizer.h"
 
 namespace ZXing {
 
@@ -14,11 +18,11 @@ namespace ZXing {
  * 
  * @param input The input image
  * @param opts Reader options specifying formats and other parameters
- * @return Barcode The decoded barcode result
+ * @return ZXing::Result The decoded barcode result
  */
-inline Barcode ReadEnhancedBarcode(const ImageView& input, const ReaderOptions& opts) {
+inline ZXing::Result ReadEnhancedBarcode(const ImageView& input, const ReaderOptions& opts) {
     // Check if we're only looking for Code 128
-    if (opts.hasFormat(BarcodeFormat::Code128) && !opts.hasFormat(~BarcodeFormat::Code128)) {
+    if (opts.formats().count() == 1 && opts.hasFormat(BarcodeFormat::Code128)) {
         // Only looking for Code 128, apply multi-scale enhancement
         auto enhanced = Code128Enhancer::enhanceBarcodeMultiScale(input, opts.tryInvert());
         return ReadBarcode(enhanced, opts);
@@ -42,11 +46,18 @@ inline Barcode ReadEnhancedBarcode(const ImageView& input, const ReaderOptions& 
 inline std::unique_ptr<BinaryBitmap> CreateEnhancedBitmap(Binarizer binarizer, const ImageView& iv, BarcodeFormat format = BarcodeFormat::None) {
     // Use specialized Code128Binarizer for Code 128 format
     if (format == BarcodeFormat::Code128) {
-        return std::make_unique<BinaryBitmap>(std::make_shared<Code128Binarizer>(iv));
+        return std::make_unique<Code128Binarizer>(iv);
     }
     
-    // For other formats, use standard CreateBitmap function
-    return CreateBitmap(binarizer, iv);
+    // For other formats, use inlined CreateBitmap logic
+    switch (binarizer) {
+    case Binarizer::BoolCast: return std::make_unique<ThresholdBinarizer>(iv, 0);
+    case Binarizer::FixedThreshold: return std::make_unique<ThresholdBinarizer>(iv, 127);
+    case Binarizer::GlobalHistogram: return std::make_unique<GlobalHistogramBinarizer>(iv);
+    case Binarizer::LocalAverage: return std::make_unique<HybridBinarizer>(iv);
+    default: break; // Should not happen if binarizer is a valid enum
+    }
+    return {}; // Fallback, or if binarizer type is not handled
 }
 
 } // namespace ZXing

@@ -28,9 +28,14 @@
 .packages
 build/
 
+# Build artifacts from this project
+_deps/
+tests/
+
 # iOS and MacOS src folders
 ios/Classes/src/
 macos/Classes/src/
 /barcode_images
 /build_new
 /fresh_build
+/debug_images

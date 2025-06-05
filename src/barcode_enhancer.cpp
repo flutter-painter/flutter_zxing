@@ -1,4 +1,6 @@
 #include "barcode_enhancer.h"
+#include "Code128Binarizer.h" // Added for custom binarizer
+#include "MultiFormatReader.h" // Added for decoding BinaryBitmap
 #include <cmath>
 #include <algorithm>
 #include <memory>
@@ -15,7 +17,7 @@ std::vector<uint8_t> Code128Enhancer::convertToGrayscale(const ImageView& input)
 
     if (input.format() == ImageFormat::Lum) {
         // Already grayscale, just copy
-        std::memcpy(result.data(), input.data(), width * height);
+        std::memcpy(result.data(), input.data(0, 0), width * height);
     } else {
         // Convert RGB/RGBA to grayscale using standard weights
         for (int y = 0; y < height; ++y) {
@@ -278,9 +280,9 @@ ImageView Code128Enhancer::rotateImage(const ImageView& input, int degrees) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 if (degrees == 90) {
-                    outputBuffer[x * height + (height - 1 - y)] = input.data()[y * width + x];
+                    outputBuffer[x * height + (height - 1 - y)] = input.data(0, 0)[y * width + x];
                 } else {  // 270 degrees
-                    outputBuffer[(width - 1 - x) * height + y] = input.data()[y * width + x];
+                    outputBuffer[(width - 1 - x) * height + y] = input.data(0, 0)[y * width + x];
                 }
             }
         }
@@ -291,7 +293,7 @@ ImageView Code128Enhancer::rotateImage(const ImageView& input, int degrees) {
         
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                outputBuffer[(height - 1 - y) * width + (width - 1 - x)] = input.data()[y * width + x];
+                outputBuffer[(height - 1 - y) * width + (width - 1 - x)] = input.data(0, 0)[y * width + x];
             }
         }
     } else {  // 0 or 360 degrees
@@ -315,36 +317,37 @@ ImageView Code128Enhancer::cropImage(const ImageView& input, int x, int y, int w
     for (int ry = 0; ry < height; ry++) {
         std::memcpy(
             outputBuffer.get() + ry * width,
-            input.data() + (y + ry) * input.width() + x,
+            input.data(0, 0) + (y + ry) * input.width() + x,
             width
         );
     }
     
-    return ImageView(outputBuffer.release(), width, height, ImageFormat::Lum);
+return ImageView(outputBuffer.release(), width, height, ImageFormat::Lum);
 }
 
 ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInvert, bool isTest) {
-    // Validate input
-    if (!input.data() || input.width() <= 0 || input.height() <= 0) {
-        std::cout << "Invalid input image" << std::endl;
-        return input;
-    }
+// Validate input
+if (!input.data(0, 0) || input.width() <= 0 || input.height() <= 0) {
+    // std::cout << "Invalid input image" << std::endl;
+    return input;
+}
 
-    // Try decoding original image first with Code 128 specific options
-    ReaderOptions opts;
-    opts.setTryHarder(true);
-    opts.setTryRotate(true);
-    opts.setIsPure(false);
-    opts.setBinarizer(Binarizer::LocalAverage);
-    opts.setFormats(BarcodeFormat::Code128);
-    opts.setMinLineCount(2);
+// Try decoding original image first with Code 128 specific options
+ReaderOptions opts;
+opts.setTryHarder(true);
+opts.setTryRotate(true);
+opts.setIsPure(false);
+// opts.setBinarizer(Binarizer::LocalAverage); // Let MultiFormatReader use the binarizer from the BinaryBitmap
+opts.setFormats(BarcodeFormat::Code128);
+opts.setMinLineCount(2);
 
     // Try decoding the oriented image first
-    auto result = ReadBarcode(input, opts);
-    if (result.isValid()) {
-        std::cout << "Oriented image decoded successfully" << std::endl;
-        return input;
-    }
+    ZXing::Result result; // Declare result
+    // auto result_early = ReadBarcode(input, opts); // Commented out early attempt
+    // if (result_early.isValid()) { // Commented out early exit
+    //     // std::cout << "Oriented image decoded successfully" << std::endl;
+    //     return input;
+    // }
 
     // Convert to grayscale and keep data alive
     std::vector<uint8_t> image = convertToGrayscale(input);
@@ -358,12 +361,12 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     const double minContrast = 0.1;  // Very permissive for poor contrast images
     const int verticalRedundancy = static_cast<int>(height * 0.2);  // Increased to 20% for maximum noise reduction
 
-    // std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
-    // std::cout << "- Min module width: " << minModuleWidth << std::endl;
-    // std::cout << "- Max module width: " << maxModuleWidth << std::endl;
-    // std::cout << "- Quiet zone width: " << quietZoneWidth << std::endl;
-    // std::cout << "- Min contrast: " << minContrast << std::endl;
-    // std::cout << "- Vertical redundancy: " << verticalRedundancy << std::endl;
+    // // std::cout << "Starting Code 128 enhancement with parameters:" << std::endl;
+    // // std::cout << "- Min module width: " << minModuleWidth << std::endl;
+    // // std::cout << "- Max module width: " << maxModuleWidth << std::endl;
+    // // std::cout << "- Quiet zone width: " << quietZoneWidth << std::endl;
+    // // std::cout << "- Min contrast: " << minContrast << std::endl;
+    // // std::cout << "- Vertical redundancy: " << verticalRedundancy << std::endl;
 
     // Apply vertical averaging to reduce noise
     std::vector<uint8_t> verticalAveraged(width * height);
@@ -398,11 +401,13 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
     // no need to enhance image if original is decodable
     // If we are in test mode, we still want to apply enhancement to assess if it helps
     // if(isTest == false){
-    //     result = ReadBarcode(thresholdView, opts);
-    //     if (result.isValid()) {
-    //         std::cout << "Thresholded image is decodable, returning it" << std::endl;
-    //         return thresholdView;
-    //     }
+    auto customBinarizer = std::make_shared<Code128Binarizer>(thresholdView);
+    ZXing::MultiFormatReader reader(opts);
+    result = reader.read(*customBinarizer);
+    if (result.isValid()) {
+        // std::cout << "Thresholded image (custom binarizer) is decodable, returning it" << std::endl;
+        return thresholdView;
+    }
     // }
 
     // If we get here, try with inversion if requested (only when necessary)
@@ -417,20 +422,22 @@ ImageView Code128Enhancer::enhanceBarcode(const ImageView& input, bool shouldInv
         std::memcpy(invertedBuffer.get(), verticalAveraged.data(), width * height);
         ImageView invertedView(invertedBuffer.get(), width, height, ImageFormat::Lum);
 
-        auto result = ReadBarcode(invertedView, opts);
+        auto customBinarizerInverted = std::make_shared<Code128Binarizer>(invertedView);
+        ZXing::MultiFormatReader readerInverted(opts); // It's okay to re-use opts, or create new if opts could change
+        result = readerInverted.read(*customBinarizerInverted);
         if (result.isValid()) {
-            std::cout << "Inverted image is decodable, returning it" << std::endl;
+            // std::cout << "Inverted image (custom binarizer) is decodable, returning it" << std::endl;
             return invertedView;
         }
     }
 
     // If nothing worked, return the original image
-    std::cout << "No enhancement was successful, returning original image" << std::endl;
+    // std::cout << "No enhancement was successful, returning original image" << std::endl;
     return input;
 }
 
 ImageView Code128Enhancer::scaleImage(const ImageView& input, float scaleFactor) {
-    if (scaleFactor <= 0 || !input.data()) {
+    if (scaleFactor <= 0 || !input.data(0,0)) { // Added (0,0)
         return input;
     }
     
@@ -460,10 +467,10 @@ ImageView Code128Enhancer::scaleImage(const ImageView& input, float scaleFactor)
             float xFraction = originalX - x1;
             
             // Bilinear interpolation
-            float p1 = input.data()[y1 * originalWidth + x1];
-            float p2 = input.data()[y1 * originalWidth + x2];
-            float p3 = input.data()[y2 * originalWidth + x1];
-            float p4 = input.data()[y2 * originalWidth + x2];
+            float p1 = input.data(0, 0)[y1 * originalWidth + x1];
+            float p2 = input.data(0, 0)[y1 * originalWidth + x2];
+            float p3 = input.data(0, 0)[y2 * originalWidth + x1];
+            float p4 = input.data(0, 0)[y2 * originalWidth + x2];
             
             float top = p1 * (1 - xFraction) + p2 * xFraction;
             float bottom = p3 * (1 - xFraction) + p4 * xFraction;
@@ -593,8 +600,8 @@ void Code128Enhancer::correctBarWidths(std::vector<uint8_t>& image, int width, i
 }
 
 ImageView Code128Enhancer::enhanceBarcodeMultiScale(const ImageView& input, bool shouldInvert) {
-    if (!input.data() || input.width() <= 0 || input.height() <= 0) {
-        std::cout << "Invalid input image for multi-scale analysis" << std::endl;
+    if (!input.data(0, 0) || input.width() <= 0 || input.height() <= 0) {
+        // std::cout << "Invalid input image for multi-scale analysis" << std::endl;
         return input;
     }
     
@@ -612,7 +619,7 @@ ImageView Code128Enhancer::enhanceBarcodeMultiScale(const ImageView& input, bool
     auto result = ReadBarcode(enhancedOriginal, opts);
     
     if (result.isValid()) {
-        std::cout << "Original scale enhanced image is decodable" << std::endl;
+        // std::cout << "Original scale enhanced image is decodable" << std::endl;
         return enhancedOriginal;
     }
     
@@ -621,7 +628,7 @@ ImageView Code128Enhancer::enhanceBarcodeMultiScale(const ImageView& input, bool
     const float scales[] = {0.75f, 1.25f, 1.5f, 2.0f};
     
     for (float scale : scales) {
-        std::cout << "Trying scale factor: " << scale << std::endl;
+        // std::cout << "Trying scale factor: " << scale << std::endl;
         
         // Scale the image
         auto scaledImage = scaleImage(input, scale);
@@ -633,14 +640,211 @@ ImageView Code128Enhancer::enhanceBarcodeMultiScale(const ImageView& input, bool
         result = ReadBarcode(enhancedScaled, opts);
         
         if (result.isValid()) {
-            std::cout << "Successfully decoded at scale factor: " << scale << std::endl;
+            // std::cout << "Successfully decoded at scale factor: " << scale << std::endl;
             return enhancedScaled;
         }
     }
     
     // If no scale worked, return the original enhanced version
-    std::cout << "No scale factor succeeded, returning original enhanced image" << std::endl;
+    // std::cout << "No scale factor succeeded, returning original enhanced image" << std::endl;
     return enhancedOriginal;
+}
+
+
+// New helper function for FFT-based enhancement
+std::vector<uint8_t> Code128Enhancer::enhanceWithFrequencyDomain(const std::vector<uint8_t>& image, int width, int height) {
+    if (image.empty() || width <= 0 || height <= 0) {
+        return image;
+    }
+
+    // Convert std::vector to CImg
+    cimg_library::CImg<unsigned char> cimg(image.data(), width, height, 1, 1, true); // share memory
+
+    // Perform FFT
+    cimg_library::CImgList<float> fft = cimg.get_FFT();
+
+    // Create a filter (e.g., enhance horizontal frequencies for Code 128)
+    // This is a simple example; a more sophisticated filter might be needed.
+    // We'll try a basic high-pass filter for horizontal frequencies.
+    // The idea is to keep frequencies that correspond to vertical edges (horizontal bars).
+    cimg_library::CImg<float>& real = fft[0];
+    cimg_library::CImg<float>& imag = fft[1];
+
+    const int centerX = real.width() / 2;
+    const int centerY = real.height() / 2;
+    const float passband_radius_x_relative = 0.4f; // Pass frequencies in the horizontal direction
+    const float stopband_radius_y_relative = 0.1f; // Attenuate frequencies in the vertical direction (noise)
+
+    cimg_forXY(real, x, y) {
+        float dist_x = static_cast<float>(x - centerX) / centerX;
+        float dist_y = static_cast<float>(y - centerY) / centerY;
+
+        // Create an elliptical or rectangular passband filter
+        // This filter aims to preserve horizontal structures (barcode bars)
+        // and attenuate vertical noise or structures not aligned with the barcode.
+        bool in_passband = (std::abs(dist_x) < passband_radius_x_relative && std::abs(dist_y) > stopband_radius_y_relative) || 
+                           (std::abs(dist_x) > 1.0f - passband_radius_x_relative && std::abs(dist_y) > stopband_radius_y_relative); // also high frequencies
+        
+        // A simpler filter: enhance horizontal features by attenuating vertical ones
+        // This is a very basic directional filter example
+        float angle = std::atan2(static_cast<float>(y - centerY), static_cast<float>(x - centerX));
+        float filter_val = 1.0f;
+        // Attenuate frequencies close to the vertical axis (abs(angle) around PI/2)
+        if (std::abs(std::abs(angle) - M_PI / 2.0) < M_PI / 6.0) { // Attenuate within +/- 30 degrees of vertical
+            filter_val = 0.1f; // Attenuation factor
+        }
+
+        if (!in_passband) { // Apply the simpler directional filter logic for now
+             // Attenuate frequencies that are not predominantly horizontal
+            if (std::abs(dist_y) > 0.1 && std::abs(dist_x) < std::abs(dist_y)*0.5) { // more vertical than horizontal
+                real(x, y) *= 0.1f;
+                imag(x, y) *= 0.1f;
+            }
+        } else {
+            // Optionally boost frequencies in the passband
+            // real(x, y) *= 1.5f;
+            // imag(x, y) *= 1.5f;
+        }
+    }
+    // Shift the zero-frequency component back to the corner for inverse FFT if it was shifted
+    // fft[0].shift(centerX, centerY, 0, 0, 2);
+    // fft[1].shift(centerX, centerY, 0, 0, 2);
+
+    // Perform inverse FFT
+    // cimg_library::CImg<unsigned char> enhanced_cimg = fft.get_IFFT(false)[0]; // Get real part
+    // enhanced_cimg.normalize(0, 255);
+
+    // Convert CImg back to std::vector<uint8_t>
+    // std::vector<uint8_t> result(width * height);
+    // std::memcpy(result.data(), enhanced_cimg.data(), width * height);
+
+    return image; // Return original image as FFT processing is commented out
+}
+
+// New public function for FFT-based enhancement
+ImageView Code128Enhancer::enhanceBarcodeWithFFT(const ImageView& input, bool shouldInvert) {
+    if (!input.data(0, 0) || input.width() <= 0 || input.height() <= 0) {
+        return input;
+    }
+
+    std::vector<uint8_t> grayImage = convertToGrayscale(input);
+    int width = input.width();
+    int height = input.height();
+
+    std::vector<uint8_t> fftEnhancedImage = enhanceWithFrequencyDomain(grayImage, width, height);
+    
+    ImageView enhancedView = toImageView(fftEnhancedImage, width, height);
+
+    ReaderOptions opts;
+    opts.setTryHarder(true);
+    opts.setTryRotate(true);
+    opts.setFormats(BarcodeFormat::Code128);
+    opts.setBinarizer(Binarizer::LocalAverage);
+
+    auto result = ReadBarcode(enhancedView, opts);
+    if (result.isValid()) {
+        return enhancedView;
+    }
+
+    if (shouldInvert) {
+        for (size_t i = 0; i < fftEnhancedImage.size(); ++i) {
+            fftEnhancedImage[i] = 255 - fftEnhancedImage[i];
+        }
+        ImageView invertedView = toImageView(fftEnhancedImage, width, height);
+        result = ReadBarcode(invertedView, opts);
+        if (result.isValid()) {
+            return invertedView;
+        }
+    }
+
+    return input; // Return original if FFT enhancement fails
+}
+
+// Placeholder for Specialized 1D Adaptive Thresholding
+std::vector<uint8_t> Code128Enhancer::applyCode128AdaptiveThreshold(const std::vector<uint8_t>& image, int width, int height) {
+    // TODO: Implement specialized 1D adaptive thresholding for Code 128
+    // This will involve analyzing horizontal scanlines, estimating module widths,
+    // and applying a threshold based on Code 128's 11-module character pattern.
+    // std::cout << "Placeholder: applyCode128AdaptiveThreshold called" << std::endl;
+    return image; // Return original for now
+}
+
+ImageView Code128Enhancer::enhanceWithAdaptiveThresholding(const ImageView& input, bool shouldInvert) {
+    if (!input.data(0, 0) || input.width() <= 0 || input.height() <= 0) {
+        return input;
+    }
+    std::vector<uint8_t> grayImage = convertToGrayscale(input);
+    int width = input.width();
+    int height = input.height();
+
+    std::vector<uint8_t> thresholdedImage = applyCode128AdaptiveThreshold(grayImage, width, height);
+    ImageView enhancedView = toImageView(thresholdedImage, width, height);
+
+    ReaderOptions opts;
+    opts.setTryHarder(true);
+    opts.setTryRotate(true);
+    opts.setFormats(BarcodeFormat::Code128);
+    opts.setBinarizer(Binarizer::LocalAverage); // Or a binarizer suited for already thresholded images if necessary
+
+    auto result = ReadBarcode(enhancedView, opts);
+    if (result.isValid()) {
+        return enhancedView;
+    }
+
+    if (shouldInvert) {
+        for (size_t i = 0; i < thresholdedImage.size(); ++i) {
+            thresholdedImage[i] = 255 - thresholdedImage[i];
+        }
+        ImageView invertedView = toImageView(thresholdedImage, width, height);
+        result = ReadBarcode(invertedView, opts);
+        if (result.isValid()) {
+            return invertedView;
+        }
+    }
+    return input;
+}
+
+// Placeholder for Directional Processing Pipeline
+std::vector<uint8_t> Code128Enhancer::applyCode128DirectionalFilter(const std::vector<uint8_t>& image, int width, int height) {
+    // TODO: Implement directional processing pipeline for Code 128
+    // This will involve horizontal blur, horizontal Sobel filter, and normalization.
+    // std::cout << "Placeholder: applyCode128DirectionalFilter called" << std::endl;
+    return image; // Return original for now
+}
+
+ImageView Code128Enhancer::enhanceWithDirectionalProcessing(const ImageView& input, bool shouldInvert) {
+    if (!input.data(0, 0) || input.width() <= 0 || input.height() <= 0) {
+        return input;
+    }
+    std::vector<uint8_t> grayImage = convertToGrayscale(input);
+    int width = input.width();
+    int height = input.height();
+
+    std::vector<uint8_t> processedImage = applyCode128DirectionalFilter(grayImage, width, height);
+    ImageView enhancedView = toImageView(processedImage, width, height);
+
+    ReaderOptions opts;
+    opts.setTryHarder(true);
+    opts.setTryRotate(true);
+    opts.setFormats(BarcodeFormat::Code128);
+    opts.setBinarizer(Binarizer::LocalAverage);
+
+    auto result = ReadBarcode(enhancedView, opts);
+    if (result.isValid()) {
+        return enhancedView;
+    }
+
+    if (shouldInvert) {
+        for (size_t i = 0; i < processedImage.size(); ++i) {
+            processedImage[i] = 255 - processedImage[i];
+        }
+        ImageView invertedView = toImageView(processedImage, width, height);
+        result = ReadBarcode(invertedView, opts);
+        if (result.isValid()) {
+            return invertedView;
+        }
+    }
+    return input;
 }
 
 } // namespace ZXing 

@@ -21,7 +21,7 @@
 #include "ReadBarcode.h"
 #include "MultiFormatWriter.h"
 #include "BitMatrix.h"
-#include "Version.h"
+#include "ZXVersion.h"
 #include "barcode_enhancer.h"
 #include "EnhancedBarcodeReader.h"
 
@@ -160,7 +160,7 @@ uint8_t* dartBytesFromImageView(const ImageView& image)
     int w = image.width();
     int h = image.height();
     int stride = image.rowStride(); // stride in bytes
-    const uint8_t* src = image.data();
+    const uint8_t* src = image.data(0, 0);
 
     auto* out = dart_malloc<uint8_t>(w * h);
     for (int y = 0; y < h; ++y) {
@@ -214,8 +214,10 @@ int elapsed_ms(const steady_clock::time_point& start)
 }
 
 // Helper to check if format is 1D
-bool is1DFormat(int format) {
-    return (format & Format::LINEAR_CODES) != 0;
+bool is1DFormat(int formatsBitmask) {
+    ZXing::BarcodeFormats currentFormats(static_cast<ZXing::BarcodeFormat>(formatsBitmask));
+    ZXing::BarcodeFormats linearFormatsFlags(ZXing::BarcodeFormat::LinearCodes);
+    return !((currentFormats & linearFormatsFlags).empty());
 }
 
 //
@@ -300,7 +302,11 @@ CodeResults _readBarcodes(const DecodeBarcodeParams& params) noexcept
         // For multiple barcodes, we'll still use ReadBarcodes but with our enhanced bitmap creation
         auto bitmap = CreateEnhancedBitmap(code128Opts.binarizer(), image, BarcodeFormat::Code128);
         MultiFormatReader reader(code128Opts);
-        results = reader.read(*bitmap);
+        ZXing::Result single_result = reader.read(*bitmap);
+        results.clear();
+        if (single_result.isValid()) {
+            results.push_back(single_result);
+        }
         
         // If no barcodes found, fall back to original image
         if (results.empty()) {

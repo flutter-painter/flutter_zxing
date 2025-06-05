@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(barcode_enhancement_test)
 
+enable_testing()
+
+# Set global output directories
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR})
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +36,7 @@ include_directories(${CMAKE_SOURCE_DIR}/third_party)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Add ZXing library
-add_subdirectory(src/zxing/core)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/zxing/core)
 
 # Add Catch2 for testing
 Include(FetchContent)
@@ -46,13 +53,23 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(barcode_tests
     src/tests/barcode_test.cpp
     src/barcode_enhancer.cpp
+    src/Code128Binarizer.cpp
 )
 
 # Link against ZXing library
-target_link_libraries(barcode_tests PRIVATE ZXing Catch2::Catch2WithMain)
+target_link_libraries(barcode_tests PRIVATE
+    ZXing
+    Catch2::Catch2
+)
+
+# Add test to CTest
+add_test(NAME BarcodeTests COMMAND "${CMAKE_BINARY_DIR}/Debug/barcode_tests.exe" WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/Debug")
 
 # Add include directories
 target_include_directories(barcode_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/zxing/core/src
-) 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"      # For local headers like barcode_enhancer.h
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party" # For stb_image.h etc.
+    # ZXing include directories should be inherited from target_link_libraries(ZXing)
+)
+
+add_subdirectory(src)
